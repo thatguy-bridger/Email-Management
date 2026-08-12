@@ -9,6 +9,16 @@ Built for [Vercel](https://vercel.com): the frontend is static files in
 `/public`, the backend is serverless functions in `/api`, storage is
 Postgres, and periodic sync runs on Vercel Cron.
 
+`/api` has one file per *resource* (`accounts`, `auth`, `categories`,
+`messages`, `rules`, plus standalone `stats` and `cron/sync`), not one per
+route — each uses a catch-all dynamic filename
+(`api/accounts/[[...segments]].js`) and dispatches internally on the
+sub-path and HTTP method. That's deliberate, not a style choice: Vercel's
+Hobby plan caps a deployment at 12 Serverless Functions, and one file per
+route would have been 17. The URLs themselves are unaffected —
+`/api/accounts/:id/sync` etc. all still work exactly as they would with
+one-file-per-route.
+
 ## How it's organized
 
 - **Home** — dashboard: unread/needs-reply/flagged counts, per-category
