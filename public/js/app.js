@@ -16,7 +16,17 @@ const state = {
   accounts: [],
   providers: {},
   rules: [],
-  inbox: { mailbox: 'inbox', category: null, q: '', messages: [], selectedId: null, offset: 0, hasMore: false },
+  inbox: {
+    mailbox: 'inbox',
+    category: null,
+    q: '',
+    messages: [],
+    selectedId: null,
+    offset: 0,
+    hasMore: false,
+    filterFlag: null, // null | 'unread' | 'needsReply' | 'flagged'
+    selected: new Set(),
+  },
 };
 
 // ===================== Theme / palette =====================
@@ -125,11 +135,19 @@ async function loadHome() {
     const [stats] = await Promise.all([api.getStats(), refreshCategories()]);
 
     document.getElementById('home-stat-grid').innerHTML = `
-      <div class="glass-card stat-tile accent-1"><div class="stat-value">${stats.unread}</div><div class="stat-label">Unread</div></div>
-      <div class="glass-card stat-tile accent-3"><div class="stat-value">${stats.needsReply}</div><div class="stat-label">Needs Reply</div></div>
-      <div class="glass-card stat-tile"><div class="stat-value">${stats.flagged}</div><div class="stat-label">Flagged</div></div>
-      <div class="glass-card stat-tile"><div class="stat-value">${stats.accounts.length}</div><div class="stat-label">Accounts</div></div>
+      <div class="glass-card stat-tile accent-1" data-stat="unread" style="cursor:pointer;"><div class="stat-value">${stats.unread}</div><div class="stat-label">Unread</div></div>
+      <div class="glass-card stat-tile accent-3" data-stat="needsReply" style="cursor:pointer;"><div class="stat-value">${stats.needsReply}</div><div class="stat-label">Needs Reply</div></div>
+      <div class="glass-card stat-tile" data-stat="flagged" style="cursor:pointer;"><div class="stat-value">${stats.flagged}</div><div class="stat-label">Flagged</div></div>
+      <div class="glass-card stat-tile" data-stat="accounts" style="cursor:pointer;"><div class="stat-value">${stats.accounts.length}</div><div class="stat-label">Accounts</div></div>
     `;
+    document.querySelectorAll('#home-stat-grid [data-stat]').forEach((tile) => {
+      tile.onclick = () => {
+        const key = tile.dataset.stat;
+        if (key === 'accounts') return switchView('accounts');
+        state.inbox.filterFlag = key;
+        switchView('inbox');
+      };
+    });
     const unreadBadge = document.getElementById('nav-unread-badge');
     unreadBadge.textContent = stats.unread;
     unreadBadge.classList.toggle('hidden', stats.unread === 0);
@@ -236,6 +254,46 @@ function renderCategoryRail() {
   );
 }
 
+const QUICK_FILTER_LABELS = { unread: 'Unread', needsReply: 'Needs Reply', flagged: 'Flagged' };
+
+// Reflects state.inbox.filterFlag in the UI: the Unread toggle's active
+// state, and a dismissible banner for the other two (which arrive via a
+// click on a Home stat tile, not a control that's already visible here).
+function syncQuickFilterUI() {
+  document.getElementById('unread-filter-toggle').classList.toggle('active', state.inbox.filterFlag === 'unread');
+
+  const banner = document.getElementById('inbox-quick-filter-banner');
+  if (state.inbox.filterFlag && state.inbox.filterFlag !== 'unread') {
+    banner.innerHTML = `<div class="banner" style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;">
+      <span>Showing: ${QUICK_FILTER_LABELS[state.inbox.filterFlag]}</span>
+      <button class="btn btn-sm btn-ghost" id="clear-quick-filter-btn" style="margin-left:auto;">Clear</button>
+    </div>`;
+    document.getElementById('clear-quick-filter-btn').onclick = () => {
+      state.inbox.filterFlag = null;
+      syncQuickFilterUI();
+      loadMessages();
+    };
+  } else {
+    banner.innerHTML = '';
+  }
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('inbox-bulk-bar');
+  const count = state.inbox.selected.size;
+  bar.classList.toggle('hidden', count === 0);
+  document.getElementById('inbox-bulk-count').textContent = `${count} selected`;
+}
+
+async function runBulkAction(payload) {
+  const ids = [...state.inbox.selected];
+  if (!ids.length) return;
+  await Promise.all(ids.map((id) => api.updateMessage(id, payload).catch(() => {})));
+  state.inbox.selected.clear();
+  updateBulkBar();
+  loadMessages();
+}
+
 async function loadInbox() {
   try {
     await refreshCategories();
@@ -250,14 +308,44 @@ async function loadInbox() {
   // tabs/search dead for the rest of the session) and via .onclick rather
   // than addEventListener, since loadInbox() re-runs every time the Inbox
   // nav item is clicked and addEventListener would stack duplicate handlers.
-  document.querySelectorAll('.mailbox-tab').forEach((tab) => {
+  // Scoped to [data-mailbox] specifically so the Unread toggle -- same
+  // "mailbox-tab" styling class, but not a mailbox switch -- isn't swept
+  // into this loop.
+  document.querySelectorAll('.mailbox-tab[data-mailbox]').forEach((tab) => {
     tab.onclick = () => {
-      document.querySelectorAll('.mailbox-tab').forEach((t) => t.classList.remove('active'));
+      document.querySelectorAll('.mailbox-tab[data-mailbox]').forEach((t) => t.classList.remove('active'));
       tab.classList.add('active');
       state.inbox.mailbox = tab.dataset.mailbox;
       loadMessages();
     };
   });
+
+  document.getElementById('unread-filter-toggle').onclick = () => {
+    state.inbox.filterFlag = state.inbox.filterFlag === 'unread' ? null : 'unread';
+    syncQuickFilterUI();
+    loadMessages();
+  };
+
+  document.getElementById('mark-all-read-btn').onclick = async (e) => {
+    const unreadIds = state.inbox.messages.filter((m) => !m.seen).map((m) => m.id);
+    if (!unreadIds.length) return;
+    e.target.disabled = true;
+    await Promise.all(unreadIds.map((id) => api.updateMessage(id, { seen: true }).catch(() => {})));
+    e.target.disabled = false;
+    loadMessages();
+  };
+
+  document.getElementById('bulk-cancel-btn').onclick = () => {
+    state.inbox.selected.clear();
+    document.querySelectorAll('.msg-select-checkbox').forEach((cb) => (cb.checked = false));
+    updateBulkBar();
+  };
+  document.getElementById('bulk-mark-read-btn').onclick = () => runBulkAction({ seen: true });
+  document.getElementById('bulk-archive-btn').onclick = () => runBulkAction({ archived: true });
+  document.getElementById('bulk-trash-btn').onclick = () => runBulkAction({ trashed: true });
+
+  syncQuickFilterUI();
+
   const search = document.getElementById('inbox-search');
   let debounce;
   search.oninput = () => {
@@ -275,6 +363,7 @@ function messageRowHtml(m) {
   const cat = catById(m.category_id);
   return `
       <div class="message-row ${m.seen ? '' : 'unread'} ${m.id === state.inbox.selectedId ? 'selected' : ''}" data-id="${m.id}">
+        <input type="checkbox" class="msg-select-checkbox" data-select-id="${m.id}" ${state.inbox.selected.has(m.id) ? 'checked' : ''} onclick="event.stopPropagation()">
         ${m.seen ? '' : '<span class="unread-dot"></span>'}
         ${cat ? `<span class="msg-cat-dot" style="background:${cat.color}"></span>` : '<span class="msg-cat-dot" style="background:transparent"></span>'}
         <div class="msg-main">
@@ -299,6 +388,13 @@ function messageRowHtml(m) {
 function wireMessageRows(container) {
   container.querySelectorAll('.message-row').forEach((row) => {
     row.onclick = () => selectMessage(row.dataset.id);
+  });
+  container.querySelectorAll('.msg-select-checkbox').forEach((cb) => {
+    cb.onchange = () => {
+      if (cb.checked) state.inbox.selected.add(cb.dataset.selectId);
+      else state.inbox.selected.delete(cb.dataset.selectId);
+      updateBulkBar();
+    };
   });
   container.querySelectorAll('[data-sort-id]').forEach((sel) => {
     sel.onchange = async () => {
@@ -327,11 +423,16 @@ async function loadMessages(reset = true) {
   if (reset) {
     state.inbox.offset = 0;
     state.inbox.messages = [];
+    state.inbox.selected.clear();
+    updateBulkBar();
     list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
   }
   const params = { mailbox: state.inbox.mailbox, limit: String(MESSAGES_PAGE_SIZE), offset: String(state.inbox.offset) };
   if (state.inbox.category) params.category = state.inbox.category;
   if (state.inbox.q) params.q = state.inbox.q;
+  if (state.inbox.filterFlag === 'unread') params.unread = 'true';
+  if (state.inbox.filterFlag === 'needsReply') params.needsReply = 'true';
+  if (state.inbox.filterFlag === 'flagged') params.flagged = 'true';
   try {
     const { messages } = await api.listMessages(params);
     state.inbox.hasMore = messages.length === MESSAGES_PAGE_SIZE;
@@ -354,6 +455,40 @@ async function loadMessages(reset = true) {
   }
 }
 
+function messageBodyHtml(m) {
+  return m.body_html
+    ? sanitizeHtmlBody(m.body_html)
+    : `<pre style="white-space:pre-wrap;font-family:inherit;">${escapeHtml(m.body_text || m.snippet || '')}</pre>`;
+}
+
+// The primary card (the message actually clicked) gets the action buttons
+// and a highlighted border; sibling thread messages are read-only context
+// around it, same as a Gmail conversation view.
+function messageCardHtml(m, isPrimary) {
+  const cat = catById(m.category_id);
+  return `
+    <div class="glass-card" style="margin-bottom:1rem;${isPrimary ? `border-color:var(--accent-1);` : ''}" data-thread-card="${m.id}">
+      <div class="reading-pane-header" style="margin-bottom:0.75rem;padding-bottom:0.75rem;">
+        <div>
+          <div class="reading-pane-meta">
+            ${escapeHtml(m.from_name || m.from_email)} &lt;${escapeHtml(m.from_email)}&gt; &middot; ${new Date(m.date).toLocaleString()}
+          </div>
+          ${cat ? `<span class="category-chip" style="margin-top:0.5rem;background:${cat.color};color:#fff;border:none;"><span class="chip-dot" style="background:rgba(255,255,255,.6)"></span>${escapeHtml(cat.name)}</span>` : ''}
+        </div>
+        ${
+          isPrimary
+            ? `<div class="reading-pane-actions">
+                <button class="icon-btn" data-act="flag" title="${m.flagged ? 'Unflag' : 'Flag'}">${m.flagged ? '&#9733;' : '&#9734;'}</button>
+                <button class="icon-btn" data-act="archive" title="Archive">&#128229;</button>
+                <button class="icon-btn" data-act="trash" title="Trash">&#128465;</button>
+              </div>`
+            : ''
+        }
+      </div>
+      <div class="reading-pane-body">${messageBodyHtml(m)}</div>
+    </div>`;
+}
+
 async function selectMessage(id) {
   state.inbox.selectedId = id;
   document.querySelectorAll('.message-row').forEach((r) => r.classList.toggle('selected', r.dataset.id === id));
@@ -361,34 +496,29 @@ async function selectMessage(id) {
   pane.innerHTML = '<div class="reading-pane-empty"><span class="spinner"></span></div>';
   try {
     const { message: m } = await api.getMessage(id);
-    const cat = catById(m.category_id);
-    pane.innerHTML = `
-      <div class="reading-pane-header">
-        <div>
-          <h2>${escapeHtml(m.subject)}</h2>
-          <div class="reading-pane-meta">
-            ${escapeHtml(m.from_name || m.from_email)} &lt;${escapeHtml(m.from_email)}&gt; &middot; ${new Date(m.date).toLocaleString()}
-          </div>
-          ${cat ? `<span class="category-chip" style="margin-top:0.5rem;background:${cat.color};color:#fff;border:none;"><span class="chip-dot" style="background:rgba(255,255,255,.6)"></span>${escapeHtml(cat.name)}</span>` : ''}
-        </div>
-        <div class="reading-pane-actions">
-          <button class="icon-btn" data-act="flag" title="${m.flagged ? 'Unflag' : 'Flag'}">${m.flagged ? '&#9733;' : '&#9734;'}</button>
-          <button class="icon-btn" data-act="archive" title="Archive">&#128229;</button>
-          <button class="icon-btn" data-act="trash" title="Trash">&#128465;</button>
-        </div>
-      </div>
-      <div class="reading-pane-body">${m.body_html ? sanitizeHtmlBody(m.body_html) : `<pre style="white-space:pre-wrap;font-family:inherit;">${escapeHtml(m.body_text || m.snippet || '')}</pre>`}</div>
-    `;
-    pane.querySelector('[data-act="flag"]').onclick = async () => {
+
+    let thread = [m];
+    if (m.thread_id) {
+      const { messages: siblings } = await api.listMessages({ threadId: m.thread_id, limit: '200' });
+      if (siblings.length > 1) thread = [...siblings].reverse(); // API returns newest-first; a conversation reads oldest-first
+    }
+
+    pane.innerHTML =
+      (thread.length > 1
+        ? `<div class="form-hint" style="margin-bottom:0.75rem;">${thread.length} messages in this conversation</div>`
+        : '') + thread.map((tm) => messageCardHtml(tm, tm.id === id)).join('');
+
+    const primaryCard = pane.querySelector(`[data-thread-card="${id}"]`);
+    primaryCard.querySelector('[data-act="flag"]').onclick = async () => {
       await api.updateMessage(id, { flagged: !m.flagged });
       selectMessage(id);
     };
-    pane.querySelector('[data-act="archive"]').onclick = async () => {
+    primaryCard.querySelector('[data-act="archive"]').onclick = async () => {
       await api.updateMessage(id, { archived: true });
       pane.innerHTML = '<div class="reading-pane-empty">Archived.</div>';
       loadMessages();
     };
-    pane.querySelector('[data-act="trash"]').onclick = async () => {
+    primaryCard.querySelector('[data-act="trash"]').onclick = async () => {
       await api.updateMessage(id, { trashed: true });
       pane.innerHTML = '<div class="reading-pane-empty">Moved to trash.</div>';
       loadMessages();
@@ -598,6 +728,7 @@ async function loadAccounts() {
           ${a.sync_error ? `<div class="account-sub" style="color:var(--danger);">${escapeHtml(a.sync_error)}</div>` : ''}
         </div>
         <span class="status-pill ${a.sync_status}">${a.sync_status}</span>
+        <button class="icon-btn" data-edit="${a.id}" title="Rename / recolor">&#9998;</button>
         <button class="icon-btn" data-sync="${a.id}" title="Sync now">&#8635;</button>
         <button class="icon-btn" data-remove="${a.id}" title="Remove">&times;</button>
       </div>`
@@ -605,6 +736,9 @@ async function loadAccounts() {
           .join('')
       : '<div class="empty-state">No accounts yet. Add one to start syncing real mail.</div>';
 
+    list.querySelectorAll('[data-edit]').forEach((btn) =>
+      btn.addEventListener('click', () => openEditAccountModal(state.accounts.find((a) => a.id === btn.dataset.edit)))
+    );
     list.querySelectorAll('[data-sync]').forEach((btn) =>
       btn.addEventListener('click', async () => {
         btn.disabled = true;
@@ -629,6 +763,37 @@ async function loadAccounts() {
   }
 
   document.getElementById('add-account-btn').onclick = openAccountModal;
+}
+
+function openEditAccountModal(account) {
+  openModal(
+    `
+    <h2>Edit account</h2>
+    <div class="form-field"><label>Display name</label><input class="form-input" id="edit-acct-name" value="${escapeHtml(account.display_name || '')}"></div>
+    <div class="form-field"><label>Color</label><input type="color" id="edit-acct-color" value="${account.color}" style="width:4rem;height:2.4rem;border:none;background:none;"></div>
+    <div id="edit-acct-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="edit-acct-cancel">Cancel</button>
+      <button class="btn btn-primary" id="edit-acct-save">Save</button>
+    </div>`,
+    (overlay) => {
+      overlay.querySelector('#edit-acct-cancel').onclick = closeModal;
+      overlay.querySelector('#edit-acct-save').onclick = async (e) => {
+        e.target.disabled = true;
+        try {
+          await api.updateAccount(account.id, {
+            displayName: overlay.querySelector('#edit-acct-name').value.trim(),
+            color: overlay.querySelector('#edit-acct-color').value,
+          });
+          closeModal();
+          loadAccounts();
+        } catch (err) {
+          showBanner(overlay.querySelector('#edit-acct-error'), 'error', err.message);
+          e.target.disabled = false;
+        }
+      };
+    }
+  );
 }
 
 function openAccountModal() {

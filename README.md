@@ -22,20 +22,25 @@ one-file-per-route.
 ## How it's organized
 
 - **Home** — dashboard: unread/needs-reply/flagged counts, per-category
-  breakdown, per-account sync status, recent mail.
+  breakdown, per-account sync status, recent mail. The stat tiles are
+  clickable and jump straight into a pre-filtered Inbox.
 - **Inbox** — message list + reading pane, 50 messages a page with a "Load
   more" button for older mail. A category rail sits right above the list
   (always visible, one click to filter), and every message row has a "Sort
   into…" dropdown — the sorting UI Gmail hides behind Settings ▸ Filters is
-  the primary surface here instead.
+  the primary surface here instead. An "Unread only" toggle and "Mark all as
+  read" sit next to the mailbox tabs. Checkboxes on each row bring up a bulk
+  action bar (mark read / archive / trash several at once). Opening a
+  message that's part of a conversation shows the whole thread stacked
+  oldest-first, not just the one message.
 - **Categories** — category cards (color-coded, message counts) and the rule
   builder that drives them: `field operator value → category`, evaluated in
   priority order, first match wins. Editing a rule only affects new mail
   until you hit "Reapply to existing mail."
-- **Accounts** — connect/manage IMAP accounts, manual "Sync now," per-account
-  status/error.
-- **Settings** — account (sign out), theme (light/dark/system), accent
-  palette.
+- **Accounts** — connect/manage IMAP accounts, rename/recolor an existing
+  one, manual "Sync now," per-account status/error.
+- **Settings** — account (change password, sign out, delete account), theme
+  (light/dark/system), accent palette.
 
 ## Accounts and sign-in
 

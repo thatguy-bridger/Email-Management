@@ -10,6 +10,10 @@ const LIST_COLUMNS = `
   date, seen, flagged, archived, trashed, has_attachments, category_id,
   category_locked, needs_reply
 `;
+// Fetching a thread (?threadId=) is for rendering a full conversation in the
+// reading pane, so it needs the bodies too -- the plain inbox list never
+// does, and stays lighter for it.
+const THREAD_COLUMNS = `${LIST_COLUMNS}, body_html, body_text`;
 
 async function listMessages(user, req, res) {
   const {
@@ -57,7 +61,7 @@ async function listMessages(user, req, res) {
   params.push(limitN, offsetN);
 
   const sql = `
-    SELECT ${LIST_COLUMNS} FROM messages
+    SELECT ${threadId ? THREAD_COLUMNS : LIST_COLUMNS} FROM messages
     WHERE ${where.join(' AND ')}
     ORDER BY date DESC
     LIMIT $${params.length - 1} OFFSET $${params.length}

@@ -233,6 +233,7 @@ body.dark-theme .status-pill.error { color: #f87171; }
 .msg-cat-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; margin-top: 0.4rem; }
 .msg-flag { color: #f59e0b; }
 .unread-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--accent-1); flex-shrink: 0; margin-top: 0.45rem; }
+.msg-select-checkbox { width: 1rem; height: 1rem; margin-top: 0.35rem; flex-shrink: 0; accent-color: var(--accent-1); cursor: pointer; }
 
 .reading-pane { min-height: 300px; }
 .reading-pane-empty { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 300px; color: var(--text-muted); font-size: 0.9rem; }

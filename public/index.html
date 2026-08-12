@@ -114,13 +114,26 @@
             </div>
           </div>
 
-          <div class="mailbox-tabs">
-            <button class="mailbox-tab active" data-mailbox="inbox">Inbox</button>
-            <button class="mailbox-tab" data-mailbox="archived">Archived</button>
-            <button class="mailbox-tab" data-mailbox="trashed">Trash</button>
+          <div class="mailbox-tabs" style="justify-content:space-between;flex-wrap:wrap;">
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+              <button class="mailbox-tab active" data-mailbox="inbox">Inbox</button>
+              <button class="mailbox-tab" data-mailbox="archived">Archived</button>
+              <button class="mailbox-tab" data-mailbox="trashed">Trash</button>
+              <button class="mailbox-tab" id="unread-filter-toggle">Unread only</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="mark-all-read-btn">Mark all as read</button>
           </div>
 
+          <div id="inbox-quick-filter-banner"></div>
           <div class="category-rail" id="inbox-category-rail"></div>
+          <div class="glass-card hidden" id="inbox-bulk-bar" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;padding:0.65rem 1rem;">
+            <span class="form-hint" id="inbox-bulk-count"></span>
+            <div style="flex:1;"></div>
+            <button class="btn btn-sm btn-ghost" id="bulk-mark-read-btn">Mark read</button>
+            <button class="btn btn-sm btn-ghost" id="bulk-archive-btn">Archive</button>
+            <button class="btn btn-sm btn-danger" id="bulk-trash-btn">Trash</button>
+            <button class="btn btn-sm btn-ghost" id="bulk-cancel-btn">Cancel</button>
+          </div>
 
           <div class="inbox-layout">
             <div id="inbox-message-list" class="message-list"></div>
