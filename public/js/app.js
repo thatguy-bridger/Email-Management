@@ -16,7 +16,7 @@ const state = {
   accounts: [],
   providers: {},
   rules: [],
-  inbox: { mailbox: 'inbox', category: null, q: '', messages: [], selectedId: null },
+  inbox: { mailbox: 'inbox', category: null, q: '', messages: [], selectedId: null, offset: 0, hasMore: false },
 };
 
 // ===================== Theme / palette =====================
@@ -269,23 +269,11 @@ async function loadInbox() {
   };
 }
 
-async function loadMessages() {
-  const list = document.getElementById('inbox-message-list');
-  list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
-  const params = { mailbox: state.inbox.mailbox, limit: '75' };
-  if (state.inbox.category) params.category = state.inbox.category;
-  if (state.inbox.q) params.q = state.inbox.q;
-  try {
-    const { messages } = await api.listMessages(params);
-    state.inbox.messages = messages;
-    if (!messages.length) {
-      list.innerHTML = '<div class="empty-state">Nothing here.</div>';
-      return;
-    }
-    list.innerHTML = messages
-      .map((m) => {
-        const cat = catById(m.category_id);
-        return `
+const MESSAGES_PAGE_SIZE = 50;
+
+function messageRowHtml(m) {
+  const cat = catById(m.category_id);
+  return `
       <div class="message-row ${m.seen ? '' : 'unread'} ${m.id === state.inbox.selectedId ? 'selected' : ''}" data-id="${m.id}">
         ${m.seen ? '' : '<span class="unread-dot"></span>'}
         ${cat ? `<span class="msg-cat-dot" style="background:${cat.color}"></span>` : '<span class="msg-cat-dot" style="background:transparent"></span>'}
@@ -302,20 +290,65 @@ async function loadMessages() {
           </select>
         </div>
       </div>`;
-      })
-      .join('');
-    list.querySelectorAll('.message-row').forEach((row) =>
-      row.addEventListener('click', () => selectMessage(row.dataset.id))
-    );
-    list.querySelectorAll('[data-sort-id]').forEach((sel) =>
-      sel.addEventListener('change', async () => {
-        if (!sel.value) return;
-        await api.updateMessage(sel.dataset.sortId, { categoryId: sel.value });
-        await refreshCategories();
-        renderCategoryRail();
-        loadMessages();
-      })
-    );
+}
+
+// Wiring uses assignment (.onclick =) rather than addEventListener so this
+// can safely be called on the whole list container every render -- initial
+// load and each "Load more" page both re-wire everything without stacking
+// duplicate listeners on rows that were already there.
+function wireMessageRows(container) {
+  container.querySelectorAll('.message-row').forEach((row) => {
+    row.onclick = () => selectMessage(row.dataset.id);
+  });
+  container.querySelectorAll('[data-sort-id]').forEach((sel) => {
+    sel.onchange = async () => {
+      if (!sel.value) return;
+      await api.updateMessage(sel.dataset.sortId, { categoryId: sel.value });
+      await refreshCategories();
+      renderCategoryRail();
+      loadMessages();
+    };
+  });
+  const loadMoreBtn = document.getElementById('load-more-messages-btn');
+  if (loadMoreBtn) {
+    loadMoreBtn.onclick = () => {
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.innerHTML = '<span class="spinner"></span>';
+      loadMessages(false);
+    };
+  }
+}
+
+// reset=true (the default) replaces the list from offset 0 -- used for a
+// fresh mailbox/category/search. reset=false appends the next page, used
+// only by the "Load more" button.
+async function loadMessages(reset = true) {
+  const list = document.getElementById('inbox-message-list');
+  if (reset) {
+    state.inbox.offset = 0;
+    state.inbox.messages = [];
+    list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+  }
+  const params = { mailbox: state.inbox.mailbox, limit: String(MESSAGES_PAGE_SIZE), offset: String(state.inbox.offset) };
+  if (state.inbox.category) params.category = state.inbox.category;
+  if (state.inbox.q) params.q = state.inbox.q;
+  try {
+    const { messages } = await api.listMessages(params);
+    state.inbox.hasMore = messages.length === MESSAGES_PAGE_SIZE;
+    state.inbox.offset += messages.length;
+    state.inbox.messages = reset ? messages : [...state.inbox.messages, ...messages];
+
+    if (!state.inbox.messages.length) {
+      list.innerHTML = '<div class="empty-state">Nothing here.</div>';
+      return;
+    }
+
+    list.innerHTML =
+      state.inbox.messages.map(messageRowHtml).join('') +
+      (state.inbox.hasMore
+        ? '<button class="btn btn-ghost btn-sm" id="load-more-messages-btn" style="width:100%;justify-content:center;margin-top:0.25rem;">Load more</button>'
+        : '');
+    wireMessageRows(list);
   } catch (err) {
     list.innerHTML = `<div class="banner error">${escapeHtml(err.message)}</div>`;
   }
@@ -700,6 +733,53 @@ function renderSettingsAccount() {
     await api.logout().catch(() => {});
     location.reload();
   };
+
+  const pwStatus = document.getElementById('settings-password-status');
+  document.getElementById('settings-password-form').onsubmit = async (e) => {
+    e.preventDefault();
+    pwStatus.innerHTML = '';
+    const currentPassword = document.getElementById('current-password').value;
+    const newPassword = document.getElementById('new-password').value;
+    try {
+      await api.changePassword({ currentPassword, newPassword });
+      showBanner(pwStatus, 'success', 'Password changed.');
+      e.target.reset();
+    } catch (err) {
+      showBanner(pwStatus, 'error', err.message);
+    }
+  };
+
+  document.getElementById('delete-account-btn').onclick = () => openDeleteAccountModal();
+}
+
+function openDeleteAccountModal() {
+  openModal(
+    `
+    <h2>Delete your account?</h2>
+    <p class="form-hint">This permanently deletes your account, connected mail accounts, synced messages,
+      categories, and rules. This can't be undone. Enter your password to confirm.</p>
+    <div class="form-field"><label>Password</label><input class="form-input" type="password" id="delete-account-password"></div>
+    <div id="delete-account-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="delete-account-cancel">Cancel</button>
+      <button class="btn btn-danger" id="delete-account-confirm">Delete my account</button>
+    </div>`,
+    (overlay) => {
+      overlay.querySelector('#delete-account-cancel').onclick = closeModal;
+      overlay.querySelector('#delete-account-confirm').onclick = async (e) => {
+        const password = overlay.querySelector('#delete-account-password').value;
+        if (!password) return;
+        e.target.disabled = true;
+        try {
+          await api.deleteMyAccount(password);
+          location.reload();
+        } catch (err) {
+          showBanner(overlay.querySelector('#delete-account-error'), 'error', err.message);
+          e.target.disabled = false;
+        }
+      };
+    }
+  );
 }
 
 // ===================== Auth gate =====================
@@ -761,6 +841,19 @@ async function boot() {
   initPalette();
   initNav();
   initAuthGate();
+
+  // Fires on any 401 from any API call. A no-op during boot's own /auth/me
+  // check and during login/signup failures (state.user is still null at
+  // that point, so there's nothing to invalidate) -- only acts when a
+  // session that was previously valid has expired mid-use.
+  api.onUnauthorized = () => {
+    if (!state.user) return;
+    state.user = null;
+    setAuthMode('login');
+    showAuthGate();
+    showBanner(document.getElementById('auth-error'), 'error', 'Your session expired. Please sign in again.');
+  };
+
   try {
     const { user } = await api.me();
     state.user = user;

@@ -23,10 +23,11 @@ one-file-per-route.
 
 - **Home** — dashboard: unread/needs-reply/flagged counts, per-category
   breakdown, per-account sync status, recent mail.
-- **Inbox** — message list + reading pane. A category rail sits right above
-  the list (always visible, one click to filter), and every message row has
-  a "Sort into…" dropdown — the sorting UI Gmail hides behind Settings ▸
-  Filters is the primary surface here instead.
+- **Inbox** — message list + reading pane, 50 messages a page with a "Load
+  more" button for older mail. A category rail sits right above the list
+  (always visible, one click to filter), and every message row has a "Sort
+  into…" dropdown — the sorting UI Gmail hides behind Settings ▸ Filters is
+  the primary surface here instead.
 - **Categories** — category cards (color-coded, message counts) and the rule
   builder that drives them: `field operator value → category`, evaluated in
   priority order, first match wins. Editing a rule only affects new mail
@@ -161,8 +162,18 @@ password-based IMAP and works today.
   even by guessing IDs (verified: cross-user reads/writes return 404).
 - HTML email bodies are rendered with scripts, styles, iframes, and inline
   event handlers stripped, and remote images blocked.
+- Login is rate-limited: 5 wrong passwords locks that account for 15
+  minutes (checked before the password itself, so a correct password
+  during a lockout still doesn't get in). Only counted against emails that
+  actually exist, so lockout timing can't be used to enumerate accounts.
+- Settings lets you change your password (requires the current one) and
+  permanently delete your account (requires your password as confirmation)
+  — deleting cascades to every mail account, message, category, and rule
+  you own via the existing foreign keys.
+- If your session cookie expires mid-use, the app notices on the next API
+  call and bounces you back to the sign-in screen instead of leaving
+  broken views around.
 - This still isn't a hardened, audited multi-tenant mail client — it's a
-  personal project with real auth, not a SOC2 product. There's no
-  email-verification step on sign-up and no rate-limiting on login attempts
-  in this version. If that matters for your deployment, add it before
-  relying on this for anything sensitive.
+  personal project with real auth, not a SOC2 product. There's still no
+  email-verification step on sign-up in this version. If that matters for
+  your deployment, add it before relying on this for anything sensitive.

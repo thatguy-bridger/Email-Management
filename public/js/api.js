@@ -7,16 +7,28 @@ async function request(path, opts = {}) {
   });
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    // api.onUnauthorized is app.js's hook for "the session cookie expired
+    // mid-use, bounce back to the sign-in gate." It no-ops harmlessly during
+    // boot's initial /auth/me check and during login/signup failures too --
+    // app.js only acts on it when state.user is already set, i.e. this
+    // wasn't an expected 401.
+    if (res.status === 401 && typeof api.onUnauthorized === 'function') api.onUnauthorized();
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
   return data;
 }
 
 export const api = {
+  onUnauthorized: null,
+
   // auth
   me: () => request('/auth/me'),
   signup: (payload) => request('/auth/signup', { method: 'POST', body: JSON.stringify(payload) }),
   login: (payload) => request('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
   logout: () => request('/auth/logout', { method: 'POST' }),
+  changePassword: (payload) => request('/auth/password', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteMyAccount: (password) => request('/auth/me', { method: 'DELETE', body: JSON.stringify({ password }) }),
 
   // accounts
   listAccounts: () => request('/accounts'),

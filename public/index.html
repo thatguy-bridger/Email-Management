@@ -194,6 +194,24 @@
             <div id="settings-account-info"></div>
           </div>
           <div class="glass-card" style="margin-bottom:1rem;">
+            <div class="panel-title">Security</div>
+            <div id="settings-password-status"></div>
+            <form id="settings-password-form">
+              <div class="form-row">
+                <div class="form-field">
+                  <label>Current password</label>
+                  <input class="form-input" type="password" id="current-password" autocomplete="current-password" required>
+                </div>
+                <div class="form-field">
+                  <label>New password</label>
+                  <input class="form-input" type="password" id="new-password" autocomplete="new-password" required>
+                  <span class="form-hint">At least 8 characters.</span>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Change password</button>
+            </form>
+          </div>
+          <div class="glass-card" style="margin-bottom:1rem;">
             <div class="panel-title">Theme</div>
             <div class="theme-toggle-row">
               <button class="btn" data-theme-choice="light">Light</button>
@@ -213,6 +231,14 @@
               The &ldquo;Sync all accounts&rdquo; button on Home and the sync icon on each account always work on
               demand, regardless of plan.
             </p>
+          </div>
+          <div class="glass-card" style="margin-top:1rem;border-color:rgba(239,68,68,.35);">
+            <div class="panel-title">Danger zone</div>
+            <p class="form-hint" style="font-size:0.82rem;">
+              Permanently deletes your account and everything in it &mdash; connected mail accounts, synced messages,
+              categories, and rules. This can't be undone.
+            </p>
+            <button class="btn btn-danger btn-sm" id="delete-account-btn">Delete my account</button>
           </div>
         </div>
       </section>
