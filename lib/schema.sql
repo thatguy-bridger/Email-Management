@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
 
+-- Historical backfill (syncing more than just the most recent watermark
+-- forward) walks backward from backfill_before_uid toward UID 1 in bounded
+-- batches -- fetching thousands of full message bodies can't happen in one
+-- 60s serverless invocation, so this tracks resumable progress across many
+-- sync calls. sync_mailbox records which mailbox path last_uid/
+-- backfill_before_uid are actually counted against (IMAP UIDs are
+-- mailbox-scoped, not global) -- if the detected sync source changes (e.g.
+-- an account synced under the old INBOX-only behavior now has an All Mail
+-- folder available), the next sync sees the mismatch and resets both
+-- watermarks instead of comparing UIDs from two different numbering spaces.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS sync_mailbox TEXT;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS backfill_before_uid INTEGER;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS backfill_complete BOOLEAN NOT NULL DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -138,3 +152,14 @@ CREATE INDEX IF NOT EXISTS idx_messages_category ON messages(category_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_seen ON messages(seen);
+
+-- IMAP UIDs are scoped to a single mailbox, so the same physical email gets
+-- a *different* uid depending on which mailbox it was fetched from (e.g.
+-- INBOX vs Gmail's All Mail). UNIQUE(account_id, uid, mailbox) above only
+-- catches literal re-fetches from the same mailbox; this catches the same
+-- email arriving via two different mailboxes (which happens whenever an
+-- account's sync source changes) using message_id, which is stable
+-- regardless of which mailbox a message is fetched from. Partial (only
+-- when message_id is present) since not every message has one.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_account_msgid
+  ON messages(account_id, message_id) WHERE message_id IS NOT NULL;

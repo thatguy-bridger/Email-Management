@@ -1607,6 +1607,33 @@ async function refreshAccounts() {
   return accounts;
 }
 
+// Account ids with a backfill chain already running -- guards against
+// piling up duplicate chains every time loadAccounts() re-renders (it can
+// run repeatedly while the accounts view stays open: manual refresh, the
+// auto-refresh after "Sync now", etc).
+const activeBackfills = new Set();
+
+async function runBackfillChain(accountId) {
+  if (activeBackfills.has(accountId)) return;
+  activeBackfills.add(accountId);
+  try {
+    while (state.view === 'accounts') {
+      let result;
+      try {
+        result = await api.syncAccount(accountId);
+      } catch {
+        break; // sync_status/sync_error already reflects the failure; stop chaining.
+      }
+      if (state.view !== 'accounts') break;
+      loadAccounts();
+      if (result.backfillComplete !== false) break;
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+  } finally {
+    activeBackfills.delete(accountId);
+  }
+}
+
 async function loadAccounts() {
   const list = document.getElementById('accounts-list');
   // Only wipe to a spinner on a genuinely first load -- if we already have
@@ -1629,6 +1656,11 @@ async function loadAccounts() {
           ${a.sync_error ? `<div class="account-sub" style="color:var(--danger);">${escapeHtml(a.sync_error)}</div>` : ''}
         </div>
         <span class="status-pill ${a.sync_status}">${a.sync_status}</span>
+        ${
+          !a.backfill_complete && a.sync_status !== 'error'
+            ? '<span class="status-pill backfilling" title="Pulling in older mail (including anything archived) in the background, a batch at a time">Backfilling&hellip;</span>'
+            : ''
+        }
         <button class="icon-btn" data-edit="${a.id}" title="Rename / recolor">&#9998;</button>
         <button class="icon-btn" data-sync="${a.id}" title="Sync now">&#8635;</button>
         <button class="icon-btn" data-remove="${a.id}" title="Remove">&times;</button>
@@ -1652,6 +1684,14 @@ async function loadAccounts() {
         }
       })
     );
+    // Historical backfill (older mail, including anything archived) happens
+    // in small bounded batches per sync call rather than all at once -- see
+    // lib/imapSync.js -- so any account that isn't caught up yet gets its
+    // next batch pulled in automatically while this page is open, instead
+    // of making the user click "Sync now" over and over.
+    state.accounts
+      .filter((a) => !a.backfill_complete && a.sync_status !== 'error')
+      .forEach((a) => runBackfillChain(a.id));
     list.querySelectorAll('[data-remove]').forEach((btn) =>
       btn.addEventListener('click', async () => {
         const account = state.accounts.find((a) => a.id === btn.dataset.remove);

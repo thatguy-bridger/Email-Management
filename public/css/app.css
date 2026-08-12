@@ -220,8 +220,10 @@ button { font-family: inherit; }
 .status-pill.idle { background: rgba(34,197,94,.15); color: #16a34a; }
 .status-pill.syncing { background: rgba(99,102,241,.15); color: var(--accent-1); }
 .status-pill.error { background: rgba(239,68,68,.15); color: var(--danger); }
+.status-pill.backfilling { background: rgba(234,179,8,.15); color: #ca8a04; }
 body.dark-theme .status-pill.idle { color: #4ade80; }
 body.dark-theme .status-pill.error { color: #f87171; }
+body.dark-theme .status-pill.backfilling { color: #facc15; }
 
 /* ===================== Category chips (front-and-center sorting) ===================== */
 .category-rail { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.1rem; }
