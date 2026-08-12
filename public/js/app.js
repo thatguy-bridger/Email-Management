@@ -141,6 +141,7 @@ function categoryDescendantIds(id) {
 // <select> listing every category (which is what caused the clutter with 70+
 // imported categories in the first place).
 let activeCategoryPicker = null;
+const PICKER_PALETTE = ['#6366f1', '#a855f7', '#ec4899', '#f59e0b', '#22c55e', '#06b6d4', '#f97316', '#14b8a6', '#8b5cf6', '#ef4444'];
 
 function closeCategoryPicker() {
   if (!activeCategoryPicker) return;
@@ -170,10 +171,12 @@ function positionCategoryPicker(popover, anchorEl) {
 // opts: selectedId, noneLabel (string to show a "clear"/"top level" row, or
 // null to omit it), excludeIds (Set -- hides categories that shouldn't be
 // selectable, e.g. a category and its own descendants when picking its
-// parent), onSelect(idOrNull).
+// parent), leafOnly (categories with subcategories are shown so the tree
+// stays navigable, but aren't selectable -- clicking one just expands it,
+// since only leaf categories can hold mail), onSelect(idOrNull).
 function openCategoryPicker(anchorEl, opts) {
   closeCategoryPicker();
-  const { selectedId = null, noneLabel = null, excludeIds = new Set(), onSelect } = opts;
+  const { selectedId = null, noneLabel = null, excludeIds = new Set(), leafOnly = false, onSelect } = opts;
 
   const popover = document.createElement('div');
   popover.className = 'cat-picker-popover glass-card';
@@ -189,26 +192,39 @@ function openCategoryPicker(anchorEl, opts) {
       cur = catById(cur.parent_id);
     }
   }
+  let creatingNew = false;
 
   function rowHtml(c, depth) {
     const children = categoryChildren(c.id).filter((ch) => !excludeIds.has(ch.id));
     const hasChildren = children.length > 0;
     const isExpanded = expanded.has(c.id);
+    const unselectable = leafOnly && hasChildren;
     return `
-      <div class="cat-picker-row ${c.id === selectedId ? 'active' : ''}" data-pick-cat="${c.id}" style="padding-left:${0.5 + depth * 1.1}rem;">
+      <div class="cat-picker-row ${c.id === selectedId ? 'active' : ''} ${unselectable ? 'unselectable' : ''}" data-pick-cat="${c.id}" data-has-children="${hasChildren}" style="padding-left:${0.5 + depth * 1.1}rem;">
         ${hasChildren ? `<span class="cat-tree-toggle ${isExpanded ? 'expanded' : ''}" data-pick-toggle="${c.id}">&#9656;</span>` : '<span class="cat-tree-toggle-spacer"></span>'}
         <span class="chip-dot" style="background:${c.color};width:0.55rem;height:0.55rem;border-radius:50%;flex-shrink:0;"></span>
-        <span>${escapeHtml(c.name)}</span>
+        <span style="flex:1;">${escapeHtml(c.name)}</span>
+        ${unselectable ? '<span class="form-hint" style="font-size:0.68rem;">has subs</span>' : ''}
       </div>
       ${hasChildren ? `<div class="${isExpanded ? '' : 'hidden'}" data-pick-children-of="${c.id}">${children.map((ch) => rowHtml(ch, depth + 1)).join('')}</div>` : ''}`;
   }
 
   function render() {
     const top = categoryChildren(null).filter((c) => !excludeIds.has(c.id));
+    const newRowHtml = creatingNew
+      ? `<div class="cat-picker-new-form">
+          <input type="text" class="form-input" id="cat-picker-new-name" placeholder="New category name">
+          <button type="button" class="icon-btn" id="cat-picker-new-confirm" title="Create">&#10003;</button>
+          <button type="button" class="icon-btn" id="cat-picker-new-cancel" title="Cancel">&times;</button>
+        </div>`
+      : `<div class="cat-picker-row cat-picker-new-row" id="cat-picker-new-btn"><span class="cat-tree-toggle-spacer"></span><span>+ New category</span></div>`;
+
     popover.innerHTML =
       (noneLabel !== null
         ? `<div class="cat-picker-row ${selectedId === null ? 'active' : ''}" data-pick-cat="">${escapeHtml(noneLabel)}</div><div class="cat-picker-sep"></div>`
-        : '') + (top.length ? top.map((c) => rowHtml(c, 0)).join('') : '<div class="form-hint" style="padding:0.5rem;">No categories yet.</div>');
+        : '') +
+      (top.length ? top.map((c) => rowHtml(c, 0)).join('') : '<div class="form-hint" style="padding:0.5rem;">No categories yet.</div>') +
+      `<div class="cat-picker-sep"></div>${newRowHtml}`;
 
     popover.querySelectorAll('[data-pick-toggle]').forEach((el) => {
       el.onclick = (e) => {
@@ -223,10 +239,61 @@ function openCategoryPicker(anchorEl, opts) {
       el.onclick = (e) => {
         e.stopPropagation();
         const id = el.dataset.pickCat || null;
+        // A parent category isn't a valid mail target in leaf-only mode --
+        // clicking it just navigates the tree instead of selecting it.
+        if (id && leafOnly && el.dataset.hasChildren === 'true') {
+          if (expanded.has(id)) expanded.delete(id);
+          else expanded.add(id);
+          render();
+          return;
+        }
         closeCategoryPicker();
         onSelect(id);
       };
     });
+
+    if (creatingNew) {
+      const input = popover.querySelector('#cat-picker-new-name');
+      input.onclick = (e) => e.stopPropagation();
+      input.focus();
+      const submitNew = async () => {
+        const name = input.value.trim();
+        if (!name) return;
+        const color = PICKER_PALETTE[state.categories.length % PICKER_PALETTE.length];
+        try {
+          const { category } = await api.createCategory({ name, color, parentId: null });
+          state.categories.push(category);
+          closeCategoryPicker();
+          onSelect(category.id);
+        } catch (err) {
+          alert(err.message);
+        }
+      };
+      popover.querySelector('#cat-picker-new-confirm').onclick = (e) => {
+        e.stopPropagation();
+        submitNew();
+      };
+      popover.querySelector('#cat-picker-new-cancel').onclick = (e) => {
+        e.stopPropagation();
+        creatingNew = false;
+        render();
+      };
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitNew();
+        } else if (e.key === 'Escape') {
+          creatingNew = false;
+          render();
+        }
+      };
+    } else {
+      popover.querySelector('#cat-picker-new-btn').onclick = (e) => {
+        e.stopPropagation();
+        creatingNew = true;
+        render();
+      };
+    }
   }
   render();
   positionCategoryPicker(popover, anchorEl);
@@ -540,6 +607,7 @@ function wireMessageRows(container) {
       openCategoryPicker(btn, {
         selectedId: msg?.category_id || null,
         noneLabel: 'Uncategorized',
+        leafOnly: true,
         onSelect: async (categoryId) => {
           await api.updateMessage(id, { categoryId });
           await refreshCategories();
@@ -715,8 +783,11 @@ function categoryTreeRowHtml(c, depth) {
   const children = categoryChildren(c.id);
   const hasChildren = children.length > 0;
   const isExpanded = categoryTreeExpanded.has(c.id);
+  // The built-in Primary category is excluded from drag-and-drop entirely --
+  // it can't be nested under anything (it's the fallback for uncategorized
+  // mail) and can't gain subcategories either (see checkParent server-side).
   return `
-    <div class="cat-tree-row" style="padding-left:${depth * 1.5}rem;">
+    <div class="cat-tree-row" data-cat-row="${c.id}" ${c.is_builtin ? '' : 'draggable="true"'} style="padding-left:${depth * 1.5}rem;">
       ${hasChildren ? `<button type="button" class="cat-tree-toggle ${isExpanded ? 'expanded' : ''}" data-toggle-cat="${c.id}" title="${isExpanded ? 'Collapse' : 'Expand'}">&#9656;</button>` : '<span class="cat-tree-toggle-spacer"></span>'}
       <div class="cat-icon" style="background:${c.color};width:1.9rem;height:1.9rem;font-size:0.78rem;">${initials(c.name)}</div>
       <span class="cat-tree-name">${escapeHtml(c.name)}</span>
@@ -727,11 +798,97 @@ function categoryTreeRowHtml(c, depth) {
     ${hasChildren ? `<div class="cat-tree-children ${isExpanded ? '' : 'hidden'}" data-children-of="${c.id}">${children.map((ch) => categoryTreeRowHtml(ch, depth + 1)).join('')}</div>` : ''}`;
 }
 
+// Dragging draggedId onto targetId would nest draggedId under targetId --
+// valid unless it's a no-op, a self/cycle, or either side is the built-in
+// Primary category (which can neither be nested nor gain subcategories).
+function isValidCategoryDrop(draggedId, targetId) {
+  if (!draggedId || !targetId || draggedId === targetId) return false;
+  const dragged = catById(draggedId);
+  const target = catById(targetId);
+  if (!dragged || !target || dragged.is_builtin || target.is_builtin) return false;
+  if ((dragged.parent_id || null) === targetId) return false;
+  if (categoryDescendantIds(draggedId).has(targetId)) return false;
+  return true;
+}
+
+async function nestCategoryOnto(draggedId, targetId) {
+  const dragged = catById(draggedId);
+  const target = catById(targetId);
+  const directRuleCount = state.rules.filter((r) => r.category_id === targetId).length;
+  const directMailCount = target.total ?? 0;
+  if (directMailCount > 0 || directRuleCount > 0) {
+    const parts = [];
+    if (directMailCount > 0) parts.push(`${directMailCount} message${directMailCount === 1 ? '' : 's'}`);
+    if (directRuleCount > 0) parts.push(`${directRuleCount} rule${directRuleCount === 1 ? '' : 's'}`);
+    const ok = confirm(
+      `"${target.name}" currently has ${parts.join(' and ')} filed directly under it. Nesting "${dragged.name}" under it turns "${target.name}" into a parent category, which can't hold mail itself -- ${parts.join(' and ')} will be uncategorized or lose that category. Continue?`
+    );
+    if (!ok) return;
+  }
+  try {
+    const { demotedParent } = await api.updateCategory(draggedId, { parentId: targetId });
+    // Reveal the nesting that just happened rather than leaving the moved
+    // category hidden inside a still-collapsed parent.
+    categoryTreeExpanded.add(targetId);
+    saveCategoryTreeExpanded();
+    if (demotedParent) {
+      const bits = [];
+      if (demotedParent.messagesUncategorized) bits.push(`${demotedParent.messagesUncategorized} message(s) uncategorized`);
+      if (demotedParent.rulesRemoved) bits.push(`${demotedParent.rulesRemoved} rule(s) removed`);
+      if (demotedParent.rulesUpdated) bits.push(`${demotedParent.rulesUpdated} rule(s) lost their category`);
+      if (bits.length) showBanner(document.getElementById('category-tree-banner'), 'success', bits.join(', ') + '.');
+    }
+    await loadCategories();
+  } catch (err) {
+    showBanner(document.getElementById('category-tree-banner'), 'error', err.message);
+  }
+}
+
+let dragCategoryId = null;
+
+function wireCategoryDragAndDrop() {
+  document.querySelectorAll('[data-cat-row]').forEach((row) => {
+    const id = row.dataset.catRow;
+    if (!row.draggable) return;
+    row.addEventListener('dragstart', (e) => {
+      dragCategoryId = id;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', id);
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      document.querySelectorAll('.cat-tree-row.drag-over').forEach((r) => r.classList.remove('drag-over'));
+      dragCategoryId = null;
+    });
+  });
+  document.querySelectorAll('[data-cat-row]').forEach((row) => {
+    const id = row.dataset.catRow;
+    row.addEventListener('dragover', (e) => {
+      if (!isValidCategoryDrop(dragCategoryId, id)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      const draggedId = dragCategoryId;
+      dragCategoryId = null;
+      if (!isValidCategoryDrop(draggedId, id)) return;
+      nestCategoryOnto(draggedId, id);
+    });
+  });
+}
+
 function renderCategoryTree() {
   const top = categoryChildren(null);
-  document.getElementById('category-grid').innerHTML = top.length
-    ? `<div class="cat-tree glass-card">${top.map((c) => categoryTreeRowHtml(c, 0)).join('')}</div>`
-    : '<div class="empty-state">No categories yet.</div>';
+  document.getElementById('category-grid').innerHTML =
+    '<div id="category-tree-banner"></div>' +
+    (top.length
+      ? `<div class="cat-tree glass-card">${top.map((c) => categoryTreeRowHtml(c, 0)).join('')}</div>`
+      : '<div class="empty-state">No categories yet.</div>');
 
   document.querySelectorAll('[data-toggle-cat]').forEach((btn) => {
     btn.onclick = () => {
@@ -760,6 +917,7 @@ function renderCategoryTree() {
       loadCategories();
     };
   });
+  wireCategoryDragAndDrop();
 }
 
 async function loadCategories() {
@@ -835,8 +993,14 @@ function openCategoryModal(category, presetParentId) {
   let selectedParentId = isEdit ? category.parent_id || null : presetParentId || null;
   // A category can never become its own ancestor -- hide it and its whole
   // subtree from its own parent picker (the backend also rejects this, but
-  // filtering it out here means you can't even see the option).
-  const excludeIds = isEdit ? new Set([category.id, ...categoryDescendantIds(category.id)]) : new Set();
+  // filtering it out here means you can't even see the option). The
+  // built-in Primary category is excluded too -- it's the fallback for
+  // uncategorized mail, so it can never itself become a parent.
+  const excludeIds = new Set(state.categories.filter((c) => c.is_builtin).map((c) => c.id));
+  if (isEdit) {
+    excludeIds.add(category.id);
+    for (const id of categoryDescendantIds(category.id)) excludeIds.add(id);
+  }
 
   openModal(
     `
@@ -924,6 +1088,7 @@ function openRuleModal(rule) {
         openCategoryPicker(overlay.querySelector('#rule-category-btn'), {
           selectedId: selectedCategoryId,
           noneLabel: '(no label)',
+          leafOnly: true,
           onSelect: (id) => {
             selectedCategoryId = id;
             overlay.querySelector('#rule-category-btn-label').textContent = id ? categoryPath(id) : '(no label)';

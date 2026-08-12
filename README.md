@@ -52,11 +52,21 @@ extending this project, keep using this pattern rather than reintroducing
   sub-categories, which can have their own sub-sub-categories, and so on.
   Each row collapses/expands independently (state persisted per-browser),
   and starts collapsed below the top level specifically so a large imported
-  label tree doesn't dump everything on screen at once. Every place a
-  category gets picked (this page's parent-category field, a rule's
-  category, an Inbox row's "Sort into…") uses the same collapsible tree
-  popover instead of a flat list, for the same reason. Below the tree,
-  the rule builder: `field operator value → category`, evaluated in
+  label tree doesn't dump everything on screen at once. Drag one category
+  onto another to nest it there — the row you drop *onto* becomes a parent
+  ("head") category. Only leaf categories (no sub-categories of their own)
+  can hold mail: nesting something under a category that currently holds
+  messages or rules directly asks for confirmation first, then uncategorizes
+  those messages and removes/adjusts those rules, since a parent category
+  is purely organizational from that point on. Every place a category gets
+  picked (this page's parent-category field, a rule's category, an Inbox
+  row's "Sort into…") uses the same collapsible tree popover instead of a
+  flat list — the rule/Inbox pickers only let you select leaf categories,
+  while the parent-category field allows any category (parents can nest
+  under other parents). Every picker also has an inline "+ New category" —
+  type a name and it's created and selected on the spot, no need to back out
+  to "+ New Category" separately. Below the tree, the rule builder:
+  `field operator value → category`, evaluated in
   priority order, first match wins. A rule's category is optional if it
   also does something automatic — delete on arrival, mark as read on
   arrival, or both (Gmail's filter actions, minus "star"/"important" which

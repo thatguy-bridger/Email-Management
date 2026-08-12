@@ -274,6 +274,9 @@ body.dark-theme .status-pill.error { color: #f87171; }
 .cat-tree-toggle { border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 0.7rem; transition: transform 0.15s; }
 .cat-tree-toggle.expanded { transform: rotate(90deg); }
 .cat-tree-children.hidden { display: none; }
+.cat-tree-row[draggable="true"] { cursor: grab; }
+.cat-tree-row.dragging { opacity: 0.4; cursor: grabbing; }
+.cat-tree-row.drag-over { background: var(--glow-accent); outline: 2px dashed var(--accent-1); outline-offset: -2px; border-radius: 0.6rem; }
 
 /* Reusable category tree picker popover -- replaces flat <select>s on the
    rule modal, category modal's parent picker, and each Inbox row's "Sort
@@ -290,7 +293,13 @@ body.dark-theme .status-pill.error { color: #f87171; }
 }
 .cat-picker-row:hover { background: var(--glass-bg); }
 .cat-picker-row.active { background: var(--accent-grad); color: #fff; }
+.cat-picker-row.unselectable { cursor: pointer; color: var(--text-muted); }
+.cat-picker-row.unselectable:hover { background: var(--glass-bg); }
 .cat-picker-sep { border-top: 1px solid var(--glass-border); margin: 0.3rem 0; }
+.cat-picker-new-row { color: var(--accent-1); font-weight: 600; }
+.cat-picker-new-form { display: flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.25rem; }
+.cat-picker-new-form .form-input { flex: 1; font-size: 0.8rem; padding: 0.4rem 0.6rem; }
+.cat-picker-new-form .icon-btn { width: 1.9rem; height: 1.9rem; }
 .rule-action-badges { display: flex; gap: 0.3rem; }
 .rule-action-badge { font-size: 0.62rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 9999px; text-transform: uppercase; }
 .rule-action-badge.trash { background: rgba(239,68,68,.15); color: var(--danger); }
