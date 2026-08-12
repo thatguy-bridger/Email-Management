@@ -329,6 +329,46 @@ function closeModal() {
   closeCategoryPicker();
 }
 
+// In-app replacement for window.confirm() -- styled like the rest of the
+// app instead of the browser's native dialog, and Promise-based so call
+// sites just `await showConfirm(...)` where they used to check the return
+// value of confirm(...) directly. danger:true swaps the confirm button to
+// the red/destructive style for delete-type actions.
+function showConfirm(message, opts = {}) {
+  const { title = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = opts;
+  return new Promise((resolve) => {
+    let settled = false;
+    openModal(
+      `
+      <h2>${escapeHtml(title)}</h2>
+      <p style="color:var(--text-secondary);font-size:0.9rem;line-height:1.55;margin:0 0 0.25rem;">${escapeHtml(message)}</p>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="confirm-cancel-btn">${escapeHtml(cancelText)}</button>
+        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="confirm-ok-btn">${escapeHtml(confirmText)}</button>
+      </div>`,
+      (overlay) => {
+        const finish = (result) => {
+          // closeModal() (via the overlay's own click-outside handler, or a
+          // second button click racing this one) could fire twice -- only
+          // the first resolves the promise.
+          if (settled) return;
+          settled = true;
+          closeModal();
+          resolve(result);
+        };
+        overlay.querySelector('#confirm-cancel-btn').onclick = () => finish(false);
+        overlay.querySelector('#confirm-ok-btn').onclick = () => finish(true);
+        // Clicking the dark overlay backdrop closes the modal (openModal's
+        // own handler) without going through finish() -- treat that the
+        // same as Cancel rather than leaving the promise unresolved forever.
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) finish(false);
+        });
+      }
+    );
+  });
+}
+
 // ===================== HOME =====================
 async function loadHome() {
   const greeting = document.getElementById('home-greeting');
@@ -818,8 +858,9 @@ async function nestCategoryOnto(draggedId, targetId) {
     const parts = [];
     if (directMailCount > 0) parts.push(`${directMailCount} message${directMailCount === 1 ? '' : 's'}`);
     if (directRuleCount > 0) parts.push(`${directRuleCount} rule${directRuleCount === 1 ? '' : 's'}`);
-    const ok = confirm(
-      `"${target.name}" currently has ${parts.join(' and ')} filed directly under it. Nesting "${dragged.name}" under it turns "${target.name}" into a parent category, which can't hold mail itself -- ${parts.join(' and ')} will be uncategorized or lose that category. Continue?`
+    const ok = await showConfirm(
+      `"${target.name}" currently has ${parts.join(' and ')} filed directly under it. Nesting "${dragged.name}" under it turns "${target.name}" into a parent category, which can't hold mail itself -- ${parts.join(' and ')} will be uncategorized or lose that category.`,
+      { title: `Nest "${dragged.name}" under "${target.name}"?`, confirmText: 'Nest it', danger: true }
     );
     if (!ok) return;
   }
@@ -908,9 +949,9 @@ function renderCategoryTree() {
       const cat = catById(btn.dataset.delCat);
       const childCount = categoryChildren(cat.id).length;
       const msg = childCount
-        ? `Delete this category? Mail in it becomes uncategorized, and its ${childCount} subcategor${childCount === 1 ? 'y moves' : 'ies move'} up a level.`
-        : 'Delete this category? Mail in it becomes uncategorized.';
-      if (!confirm(msg)) return;
+        ? `Mail in it becomes uncategorized, and its ${childCount} subcategor${childCount === 1 ? 'y moves' : 'ies move'} up a level.`
+        : 'Mail in it becomes uncategorized.';
+      if (!(await showConfirm(msg, { title: `Delete "${cat.name}"?`, confirmText: 'Delete', danger: true }))) return;
       await api.deleteCategory(btn.dataset.delCat);
       loadCategories();
     };
@@ -955,7 +996,8 @@ async function loadCategories() {
     document.querySelectorAll('[data-edit-rule]').forEach((btn) => btn.addEventListener('click', () => openRuleModal(state.rules.find((r) => r.id === btn.dataset.editRule))));
     document.querySelectorAll('[data-del-rule]').forEach((btn) =>
       btn.addEventListener('click', async () => {
-        if (!confirm('Delete this rule?')) return;
+        const rule = state.rules.find((r) => r.id === btn.dataset.delRule);
+        if (!(await showConfirm('This stops it from matching any new mail.', { title: `Delete "${rule?.name || 'this rule'}"?`, confirmText: 'Delete', danger: true }))) return;
         await api.deleteRule(btn.dataset.delRule);
         loadCategories();
       })
@@ -1222,7 +1264,13 @@ async function loadAccounts() {
     );
     list.querySelectorAll('[data-remove]').forEach((btn) =>
       btn.addEventListener('click', async () => {
-        if (!confirm('Remove this account? Synced mail stays, but it will stop updating.')) return;
+        const account = state.accounts.find((a) => a.id === btn.dataset.remove);
+        const ok = await showConfirm('Synced mail stays, but it will stop updating.', {
+          title: `Remove ${account?.email || 'this account'}?`,
+          confirmText: 'Remove',
+          danger: true,
+        });
+        if (!ok) return;
         await api.deleteAccount(btn.dataset.remove);
         loadAccounts();
       })
