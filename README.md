@@ -9,15 +9,24 @@ Built for [Vercel](https://vercel.com): the frontend is static files in
 `/public`, the backend is serverless functions in `/api`, storage is
 Postgres, and periodic sync runs on Vercel Cron.
 
-`/api` has one file per *resource* (`accounts`, `auth`, `categories`,
-`messages`, `rules`, plus standalone `stats` and `cron/sync`), not one per
-route — each uses a catch-all dynamic filename
-(`api/accounts/[[...segments]].js`) and dispatches internally on the
-sub-path and HTTP method. That's deliberate, not a style choice: Vercel's
-Hobby plan caps a deployment at 12 Serverless Functions, and one file per
-route would have been 17. The URLs themselves are unaffected —
-`/api/accounts/:id/sync` etc. all still work exactly as they would with
-one-file-per-route.
+`/api` has (at most) two files per *resource* (`accounts`, `categories`,
+`messages`, `rules`; `auth` needs only one, `stats`/`cron/sync` are
+standalone), not one per route — `index.js` handles the bare path
+(`/api/accounts`) and a catch-all `[...segments].js` dispatches everything
+under it (`/api/accounts/test`, `/api/accounts/:id`,
+`/api/accounts/:id/sync`) on sub-path and HTTP method internally, both
+backed by shared logic in `lib/routes/*.js`. That's deliberate, not a style
+choice: Vercel's Hobby plan caps a deployment at 12 Serverless Functions,
+and one file per route would have been 17 — this gets it to 11.
+
+Note the catch-all filename is `[...segments].js` (single brackets,
+*required* — matches one or more path segments), not `[[...segments].js]`
+(double brackets, *optional*). The optional/double-bracket form is a
+Next.js-specific convention; Vercel's generic function routing (what this
+project uses, since it isn't a Next.js app) only recognizes the required
+form, and silently 404s on everything under a path that only has the
+optional form — which is why the bare-path case needs its own `index.js`
+alongside it.
 
 ## How it's organized
 

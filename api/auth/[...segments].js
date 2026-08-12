@@ -7,9 +7,13 @@ import { seedDefaultCategoriesForUser, newId } from '../../lib/seed.js';
 // Consolidates signup/login/logout/me/password/delete into one function --
 // Vercel's Hobby plan caps a deployment at 12 Serverless Functions, and one
 // file per route blew well past that. A catch-all dynamic route
-// ([[...segments]].js) keeps the URLs identical (/api/auth/login etc. still
-// work exactly as before) while collapsing them into a single function that
-// dispatches on the sub-path itself.
+// ([...segments].js -- the required form; Vercel's generic function routing
+// doesn't support Next.js's optional [[...segments]].js outside Next.js
+// itself) keeps the URLs identical (/api/auth/login etc. still work exactly
+// as before) while collapsing them into a single function that dispatches
+// on the sub-path itself. Every action here always has at least one
+// sub-path segment, so the required form is sufficient -- unlike
+// accounts/categories/rules/messages, auth needs no separate index.js.
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
