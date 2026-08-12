@@ -125,13 +125,16 @@ password-based IMAP and works today.
   hard time limit (`vercel.json` sets 60s for the sync routes).
 - A brand-new account has no watermark yet, so its first sync backfills the
   most recent 50 messages instead of the entire mailbox.
-- **Automatic:** `vercel.json` schedules `/api/cron/sync` (default: every 6
-  hours) to sync every connected account. Hobby-plan projects may restrict
-  cron frequency — check current limits on your plan and adjust the
-  schedule.
+- **Automatic:** `vercel.json` schedules `/api/cron/sync` once a day (13:00
+  UTC) to sync every connected account. That's not a stylistic choice —
+  Vercel's **Hobby plan caps Cron Jobs at once per day**; anything more
+  frequent gets rejected at project-creation/deploy time. If you're on Pro
+  (or upgrade later), you can tighten this to e.g. `"0 */2 * * *"` for every
+  2 hours.
 - **Manual:** the "Sync all accounts" button on Home and the sync icon next
   to each account in Accounts always work on demand, regardless of plan or
-  cron schedule.
+  cron schedule — this is the one to lean on for anything more frequent
+  than daily while on Hobby.
 - Threading is header-based (`References`/`In-Reply-To`), not a proprietary
   thread ID — it works across providers but won't exactly match Gmail's own
   thread grouping for Gmail-originated threads.
