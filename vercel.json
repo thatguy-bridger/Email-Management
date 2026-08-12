@@ -1,7 +1,6 @@
 {
   "functions": {
     "api/accounts/index.js": { "maxDuration": 60 },
-    "api/accounts/[...segments].js": { "maxDuration": 60 },
     "api/cron/sync.js": { "maxDuration": 60 }
   },
   "crons": [

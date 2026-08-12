@@ -4,22 +4,22 @@ import { hashPassword, verifyPassword, signSession, setSessionCookie, clearSessi
 import { requireUser } from '../../lib/withAuth.js';
 import { seedDefaultCategoriesForUser, newId } from '../../lib/seed.js';
 
-// Consolidates signup/login/logout/me/password/delete into one function --
-// Vercel's Hobby plan caps a deployment at 12 Serverless Functions, and one
-// file per route blew well past that. A catch-all dynamic route
-// ([...segments].js -- the required form; Vercel's generic function routing
-// doesn't support Next.js's optional [[...segments]].js outside Next.js
-// itself) keeps the URLs identical (/api/auth/login etc. still work exactly
-// as before) while collapsing them into a single function that dispatches
-// on the sub-path itself. Every action here always has at least one
-// sub-path segment, so the required form is sufficient -- unlike
-// accounts/categories/rules/messages, auth needs no separate index.js.
+// Single static file, dispatching on ?action= in the query string rather
+// than on path segments. This project went through two failed attempts at
+// filesystem-based dynamic/catch-all routing ([[...segments]].js, then
+// [...segments].js) that both produced identical 404s in production despite
+// passing locally -- strong evidence that Vercel's plain (non-Next.js)
+// function routing doesn't reliably support catch-all segments at all, only
+// static filenames and single [param] segments. A query string sidesteps
+// the question entirely: it's parsed identically by every HTTP server
+// regardless of framework or platform, so there's nothing left to get wrong
+// here. Every route in this project now uses this pattern.
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 
 export default withApi(async (req, res) => {
-  const [action] = req.query.segments || [];
+  const action = req.query.action;
 
   if (action === 'signup') {
     if (!methodGuard(req, res, ['POST'])) return;

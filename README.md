@@ -9,24 +9,29 @@ Built for [Vercel](https://vercel.com): the frontend is static files in
 `/public`, the backend is serverless functions in `/api`, storage is
 Postgres, and periodic sync runs on Vercel Cron.
 
-`/api` has (at most) two files per *resource* (`accounts`, `categories`,
-`messages`, `rules`; `auth` needs only one, `stats`/`cron/sync` are
-standalone), not one per route — `index.js` handles the bare path
-(`/api/accounts`) and a catch-all `[...segments].js` dispatches everything
-under it (`/api/accounts/test`, `/api/accounts/:id`,
-`/api/accounts/:id/sync`) on sub-path and HTTP method internally, both
-backed by shared logic in `lib/routes/*.js`. That's deliberate, not a style
-choice: Vercel's Hobby plan caps a deployment at 12 Serverless Functions,
-and one file per route would have been 17 — this gets it to 11.
+`/api` has exactly one static file per *resource* (`accounts`, `auth`,
+`categories`, `messages`, `rules`, plus standalone `stats` and
+`cron/sync`) — 7 functions total, not one per route (which would have been
+17+). Each file dispatches internally on `?id=` and `?action=` in the
+**query string**, not on the URL path — e.g. renaming a category is
+`PATCH /api/categories?id=cat-123`, not `PATCH /api/categories/cat-123`.
+Route logic lives in `lib/routes/*.js`; the files under `/api` are thin
+dispatchers.
 
-Note the catch-all filename is `[...segments].js` (single brackets,
-*required* — matches one or more path segments), not `[[...segments].js]`
-(double brackets, *optional*). The optional/double-bracket form is a
-Next.js-specific convention; Vercel's generic function routing (what this
-project uses, since it isn't a Next.js app) only recognizes the required
-form, and silently 404s on everything under a path that only has the
-optional form — which is why the bare-path case needs its own `index.js`
-alongside it.
+That's a deliberate, load-bearing choice, not a style preference. Vercel's
+Hobby plan caps a deployment at 12 Serverless Functions, and getting fewer
+files per resource means using *some* form of dynamic routing to still
+handle `/api/accounts/:id`, `/api/accounts/:id/sync`, etc. from one file.
+Two different attempts at that failed in real deployment despite passing
+locally every time: first `[[...segments]].js` (Next.js's *optional*
+catch-all — not recognized by Vercel's generic, non-Next.js function
+routing at all), then `[...segments].js` (the *required* form, which
+should be supported per Vercel's own docs but still produced identical
+404s in production). Query-string dispatch sidesteps the question
+entirely — it's parsed identically by every HTTP server regardless of
+platform or framework, so there's nothing left to get wrong. If you're
+extending this project, keep using this pattern rather than reintroducing
+`[param]`-style dynamic route files.
 
 ## How it's organized
 
