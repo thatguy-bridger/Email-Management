@@ -142,6 +142,11 @@ function categoryDescendantIds(id) {
 // imported categories in the first place).
 let activeCategoryPicker = null;
 const PICKER_PALETTE = ['#6366f1', '#a855f7', '#ec4899', '#f59e0b', '#22c55e', '#06b6d4', '#f97316', '#14b8a6', '#8b5cf6', '#ef4444'];
+const EMOJI_ICON_CHOICES = [
+  '📧', '💰', '🧾', '📦', '🛍️', '✈️', '📰', '👥', '⚠️', '🎉',
+  '💼', '🏠', '🎓', '⚽', '🎮', '🎵', '📚', '🏥', '💊', '🚗',
+  '🐾', '🎁', '💳', '📅', '🔔', '🤝', '📢', '🗂️', '💬', '⭐',
+];
 
 function closeCategoryPicker() {
   if (!activeCategoryPicker) return;
@@ -308,6 +313,17 @@ function openCategoryPicker(anchorEl, opts) {
 }
 function initials(name) {
   return (name || '?').trim().charAt(0).toUpperCase();
+}
+// A category's `icon` column defaults to legacy plain-word ids ('tag',
+// 'inbox', 'folder') that were never meant to be rendered as text -- a
+// custom icon is only ever a user-picked emoji, which is never plain ASCII,
+// so that's what distinguishes "has a custom icon" from "still on the
+// legacy default" without needing a separate boolean column.
+function isEmojiIcon(icon) {
+  return !!icon && !/^[a-zA-Z_-]+$/.test(icon);
+}
+function categoryGlyph(c) {
+  return isEmojiIcon(c.icon) ? c.icon : initials(c.name);
 }
 function showBanner(container, type, message) {
   container.innerHTML = `<div class="banner ${type}">${escapeHtml(message)}</div>`;
@@ -827,7 +843,7 @@ function categoryTreeRowHtml(c, depth) {
   return `
     <div class="cat-tree-row" data-cat-row="${c.id}" ${c.is_builtin ? '' : 'draggable="true"'} style="padding-left:${depth * 1.5}rem;">
       ${hasChildren ? `<button type="button" class="cat-tree-toggle ${isExpanded ? 'expanded' : ''}" data-toggle-cat="${c.id}" title="${isExpanded ? 'Collapse' : 'Expand'}">&#9656;</button>` : '<span class="cat-tree-toggle-spacer"></span>'}
-      <div class="cat-icon" style="background:${c.color};width:1.9rem;height:1.9rem;font-size:0.78rem;">${initials(c.name)}</div>
+      <div class="cat-icon" style="background:${c.color};width:1.9rem;height:1.9rem;font-size:${isEmojiIcon(c.icon) ? '1rem' : '0.78rem'};">${categoryGlyph(c)}</div>
       <span class="cat-tree-name">${escapeHtml(c.name)}</span>
       <span class="form-hint">${c.total ?? 0} total &middot; ${c.unread_count ?? 0} unread${hasChildren ? ` &middot; ${children.length} sub${children.length === 1 ? '' : 's'}` : ''}</span>
       <button class="icon-btn" data-add-sub-cat="${c.id}" title="Add subcategory">+</button>
@@ -1041,6 +1057,10 @@ function openCategoryModal(category, presetParentId) {
     excludeIds.add(category.id);
     for (const id of categoryDescendantIds(category.id)) excludeIds.add(id);
   }
+  // The icon column defaults to legacy plain-word ids that were never meant
+  // to be shown as text (see isEmojiIcon) -- only carry an existing value
+  // over into the picker if it's actually a real emoji.
+  let selectedIcon = isEmojiIcon(category?.icon) ? category.icon : null;
 
   openModal(
     `
@@ -1054,12 +1074,60 @@ function openCategoryModal(category, presetParentId) {
       <span class="form-hint">Nest this under another category to build sub/sub-subcategories -- the tree collapses on the Categories page so this doesn't add clutter.</span>
     </div>
     <div class="form-field"><label>Color</label><input type="color" id="cat-color" value="${category?.color || '#6366f1'}" style="width:4rem;height:2.4rem;border:none;background:none;"></div>
+    <div class="form-field">
+      <label>Icon</label>
+      <div class="emoji-picker">
+        <div class="cat-icon" id="cat-icon-preview" style="background:${category?.color || '#6366f1'};width:2.6rem;height:2.6rem;font-size:1rem;"></div>
+        <div style="flex:1;min-width:0;">
+          <div class="emoji-picker-grid">
+            ${EMOJI_ICON_CHOICES.map((e) => `<button type="button" class="emoji-picker-btn" data-emoji="${e}">${e}</button>`).join('')}
+          </div>
+          <div class="emoji-picker-custom">
+            <input type="text" class="form-input" id="cat-icon-custom" maxlength="8" placeholder="Or paste any emoji" value="${selectedIcon ? escapeHtml(selectedIcon) : ''}">
+            <button type="button" class="btn btn-ghost btn-sm" id="cat-icon-clear">Use initials</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="cat-modal-error"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" id="cat-cancel">Cancel</button>
       <button class="btn btn-primary" id="cat-save">${isEdit ? 'Save' : 'Create'}</button>
     </div>`,
     (overlay) => {
+      const nameInput = overlay.querySelector('#cat-name');
+      const colorInput = overlay.querySelector('#cat-color');
+      const customIconInput = overlay.querySelector('#cat-icon-custom');
+      const preview = overlay.querySelector('#cat-icon-preview');
+
+      function updateIconPreview() {
+        preview.style.background = colorInput.value;
+        preview.textContent = selectedIcon || initials(nameInput.value);
+        preview.style.fontSize = selectedIcon ? '1.15rem' : '1rem';
+        overlay.querySelectorAll('.emoji-picker-btn').forEach((btn) => {
+          btn.classList.toggle('selected', btn.dataset.emoji === selectedIcon);
+        });
+      }
+      overlay.querySelectorAll('.emoji-picker-btn').forEach((btn) => {
+        btn.onclick = () => {
+          selectedIcon = btn.dataset.emoji;
+          customIconInput.value = selectedIcon;
+          updateIconPreview();
+        };
+      });
+      customIconInput.oninput = () => {
+        selectedIcon = customIconInput.value.trim() || null;
+        updateIconPreview();
+      };
+      overlay.querySelector('#cat-icon-clear').onclick = () => {
+        selectedIcon = null;
+        customIconInput.value = '';
+        updateIconPreview();
+      };
+      nameInput.addEventListener('input', updateIconPreview);
+      colorInput.addEventListener('input', updateIconPreview);
+      updateIconPreview();
+
       overlay.querySelector('#cat-parent-btn').onclick = () => {
         openCategoryPicker(overlay.querySelector('#cat-parent-btn'), {
           selectedId: selectedParentId,
@@ -1073,12 +1141,13 @@ function openCategoryModal(category, presetParentId) {
       };
       overlay.querySelector('#cat-cancel').onclick = closeModal;
       overlay.querySelector('#cat-save').onclick = async () => {
-        const name = overlay.querySelector('#cat-name').value.trim();
-        const color = overlay.querySelector('#cat-color').value;
+        const name = nameInput.value.trim();
+        const color = colorInput.value;
         if (!name) return;
+        const icon = selectedIcon || 'tag';
         try {
-          if (isEdit) await api.updateCategory(category.id, { name, color, parentId: selectedParentId });
-          else await api.createCategory({ name, color, parentId: selectedParentId });
+          if (isEdit) await api.updateCategory(category.id, { name, color, icon, parentId: selectedParentId });
+          else await api.createCategory({ name, color, icon, parentId: selectedParentId });
           closeModal();
           loadCategories();
         } catch (err) {
