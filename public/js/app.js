@@ -378,9 +378,11 @@ function showBanner(container, type, message) {
 }
 
 // ===================== Modal =====================
-function openModal(html, onMount) {
+// opts.wide: use the roomier modal-box variant (message reading modal) instead
+// of the default form-width one.
+function openModal(html, onMount, opts = {}) {
   const root = document.getElementById('modal-root');
-  root.innerHTML = `<div class="modal-overlay" id="active-modal-overlay"><div class="modal-box">${html}</div></div>`;
+  root.innerHTML = `<div class="modal-overlay" id="active-modal-overlay"><div class="modal-box${opts.wide ? ' modal-box-wide' : ''}">${html}</div></div>`;
   const overlay = document.getElementById('active-modal-overlay');
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
   if (onMount) onMount(overlay);
@@ -831,46 +833,60 @@ function messageCardHtml(m, isPrimary) {
     </div>`;
 }
 
+// Opening a message is a modal rather than a side-by-side reading pane --
+// the Inbox list stays full width and doesn't reserve space for content
+// that isn't there until something's clicked.
 async function selectMessage(id) {
   state.inbox.selectedId = id;
   document.querySelectorAll('.message-row').forEach((r) => r.classList.toggle('selected', r.dataset.id === id));
-  const pane = document.getElementById('reading-pane');
-  pane.innerHTML = '<div class="reading-pane-empty"><span class="spinner"></span></div>';
-  try {
-    const { message: m } = await api.getMessage(id);
 
-    let thread = [m];
-    if (m.thread_id) {
-      const { messages: siblings } = await api.listMessages({ threadId: m.thread_id, limit: '200' });
-      if (siblings.length > 1) thread = [...siblings].reverse(); // API returns newest-first; a conversation reads oldest-first
-    }
+  openModal(
+    `
+    <button type="button" class="modal-close-x" id="msg-modal-close" title="Close">&times;</button>
+    <div id="msg-modal-content"><div class="reading-pane-empty"><span class="spinner"></span></div></div>`,
+    async (overlay) => {
+      overlay.querySelector('#msg-modal-close').onclick = closeModal;
+      const content = overlay.querySelector('#msg-modal-content');
+      try {
+        const { message: m } = await api.getMessage(id);
 
-    pane.innerHTML =
-      (thread.length > 1
-        ? `<div class="form-hint" style="margin-bottom:0.75rem;">${thread.length} messages in this conversation</div>`
-        : '') + thread.map((tm) => messageCardHtml(tm, tm.id === id)).join('');
+        let thread = [m];
+        if (m.thread_id) {
+          const { messages: siblings } = await api.listMessages({ threadId: m.thread_id, limit: '200' });
+          if (siblings.length > 1) thread = [...siblings].reverse(); // API returns newest-first; a conversation reads oldest-first
+        }
 
-    const primaryCard = pane.querySelector(`[data-thread-card="${id}"]`);
-    primaryCard.querySelector('[data-act="flag"]').onclick = async () => {
-      await api.updateMessage(id, { flagged: !m.flagged });
-      selectMessage(id);
-    };
-    primaryCard.querySelector('[data-act="archive"]').onclick = async () => {
-      await api.updateMessage(id, { archived: true });
-      pane.innerHTML = '<div class="reading-pane-empty">Archived.</div>';
-      loadMessages();
-    };
-    primaryCard.querySelector('[data-act="trash"]').onclick = async () => {
-      await api.updateMessage(id, { trashed: true });
-      pane.innerHTML = '<div class="reading-pane-empty">Moved to trash.</div>';
-      loadMessages();
-    };
-    // reflect read state in the list without a full reload
-    const row = document.querySelector(`.message-row[data-id="${id}"]`);
-    if (row) row.classList.remove('unread');
-  } catch (err) {
-    pane.innerHTML = `<div class="banner error">${escapeHtml(err.message)}</div>`;
-  }
+        content.innerHTML =
+          `<h2 style="margin-bottom:0.75rem;padding-right:1.5rem;">${escapeHtml(m.subject || '(no subject)')}</h2>` +
+          (thread.length > 1
+            ? `<div class="form-hint" style="margin-bottom:0.75rem;">${thread.length} messages in this conversation</div>`
+            : '') +
+          thread.map((tm) => messageCardHtml(tm, tm.id === id)).join('');
+
+        const primaryCard = content.querySelector(`[data-thread-card="${id}"]`);
+        primaryCard.querySelector('[data-act="flag"]').onclick = async () => {
+          await api.updateMessage(id, { flagged: !m.flagged });
+          selectMessage(id);
+        };
+        primaryCard.querySelector('[data-act="archive"]').onclick = async () => {
+          await api.updateMessage(id, { archived: true });
+          closeModal();
+          loadMessages();
+        };
+        primaryCard.querySelector('[data-act="trash"]').onclick = async () => {
+          await api.updateMessage(id, { trashed: true });
+          closeModal();
+          loadMessages();
+        };
+        // reflect read state in the list without a full reload
+        const row = document.querySelector(`.message-row[data-id="${id}"]`);
+        if (row) row.classList.remove('unread');
+      } catch (err) {
+        content.innerHTML = `<div class="banner error">${escapeHtml(err.message)}</div>`;
+      }
+    },
+    { wide: true }
+  );
 }
 
 // Message bodies come from real IMAP mail, so they're rendered as inert text
@@ -918,7 +934,7 @@ function categoryTreeRowHtml(c, depth) {
   // mail) and can't gain subcategories either (see checkParent server-side).
   return `
     <div class="cat-tree-row" data-cat-row="${c.id}" ${c.is_builtin ? '' : 'draggable="true"'} style="padding-left:${depth * 1.5}rem;">
-      ${hasChildren ? `<button type="button" class="cat-tree-toggle ${isExpanded ? 'expanded' : ''}" data-toggle-cat="${c.id}" title="${isExpanded ? 'Collapse' : 'Expand'}">&#9656;</button>` : '<span class="cat-tree-toggle-spacer"></span>'}
+      ${hasChildren ? `<button type="button" class="cat-tree-expand-btn ${isExpanded ? 'expanded' : ''}" data-toggle-cat="${c.id}" title="${isExpanded ? 'Collapse' : 'Expand'}">&#9656;</button>` : '<span class="cat-tree-expand-spacer"></span>'}
       <div class="cat-icon" style="background:${c.color};width:1.9rem;height:1.9rem;font-size:${isEmojiIcon(c.icon) ? '1rem' : '0.78rem'};">${categoryGlyph(c)}</div>
       <span class="cat-tree-name">${escapeHtml(c.name)}</span>
       <span class="form-hint">${c.total ?? 0} total &middot; ${c.unread_count ?? 0} unread${hasChildren ? ` &middot; ${children.length} sub${children.length === 1 ? '' : 's'}` : ''}</span>
@@ -1051,6 +1067,121 @@ function renderCategoryTree() {
   wireCategoryDragAndDrop();
 }
 
+// Which rule groups are expanded on the Categories page's rule list,
+// persisted like the category tree's expand state -- collapsed by default
+// so a large Gmail-imported rule set (70+ rules) doesn't dump every row on
+// screen at once.
+const RULE_GROUPS_EXPANDED_KEY = 'mail_rule_groups_expanded';
+function loadRuleGroupsExpanded() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(RULE_GROUPS_EXPANDED_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+function saveRuleGroupsExpanded() {
+  localStorage.setItem(RULE_GROUPS_EXPANDED_KEY, JSON.stringify([...ruleGroupsExpanded]));
+}
+const ruleGroupsExpanded = loadRuleGroupsExpanded();
+const NO_CATEGORY_RULE_GROUP_KEY = '__none__';
+
+function ruleRowHtml(r) {
+  const actionBadges = [
+    r.mark_trashed ? '<span class="rule-action-badge trash">Delete</span>' : '',
+    r.mark_seen ? '<span class="rule-action-badge seen">Mark read</span>' : '',
+  ].join('');
+  const categoryLabel = r.category_id
+    ? `<span class="chip-dot" style="background:${r.category_color};display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;margin-right:0.4rem;"></span>${escapeHtml(categoryPath(r.category_id))}`
+    : '<span class="form-hint">(no label)</span>';
+  return `
+    <div class="rule-row">
+      <span>${escapeHtml(r.name)}</span>
+      <span class="form-hint">${r.field}</span>
+      <span class="form-hint">${r.operator.replace('_', ' ')}</span>
+      <span class="form-hint">"${escapeHtml(r.value)}"</span>
+      <span>${categoryLabel}</span>
+      <span class="rule-action-badges">${actionBadges}</span>
+      <span style="display:flex;gap:0.3rem;">
+        <button class="icon-btn" data-edit-rule="${r.id}" title="Edit">&#9998;</button>
+        <button class="icon-btn" data-del-rule="${r.id}" title="Delete">&times;</button>
+      </span>
+    </div>`;
+}
+
+// Rules evaluate strictly by priority regardless of category (unaffected by
+// any of this -- it's purely a display grouping), but a flat list of 70+
+// imported rules is unreadable, so they're clustered into a collapsible
+// dropdown per target category instead.
+function renderRuleGroups() {
+  const list = document.getElementById('rule-list');
+  if (!state.rules.length) {
+    list.innerHTML = '<div class="empty-state">No rules yet. Add one to start auto-sorting mail.</div>';
+    return;
+  }
+
+  const groups = new Map();
+  for (const r of state.rules) {
+    const key = r.category_id || NO_CATEGORY_RULE_GROUP_KEY;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        label: r.category_id ? categoryPath(r.category_id) : 'No category (delete / mark-read only)',
+        color: r.category_id ? r.category_color : null,
+        rules: [],
+      });
+    }
+    groups.get(key).rules.push(r);
+  }
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    if (a === NO_CATEGORY_RULE_GROUP_KEY) return 1;
+    if (b === NO_CATEGORY_RULE_GROUP_KEY) return -1;
+    return groups.get(a).label.localeCompare(groups.get(b).label);
+  });
+
+  list.innerHTML = sortedKeys
+    .map((key) => {
+      const group = groups.get(key);
+      const isExpanded = ruleGroupsExpanded.has(key);
+      return `
+      <div class="rule-group">
+        <button type="button" class="rule-group-header" data-toggle-rule-group="${key}">
+          <span class="cat-tree-expand-btn ${isExpanded ? 'expanded' : ''}" style="pointer-events:none;">&#9656;</span>
+          <span class="chip-dot" style="background:${group.color || 'var(--text-muted)'};"></span>
+          <span class="rule-group-label">${escapeHtml(group.label)}</span>
+          <span class="form-hint">${group.rules.length} rule${group.rules.length === 1 ? '' : 's'}</span>
+        </button>
+        <div class="rule-group-body ${isExpanded ? '' : 'hidden'}">
+          ${group.rules.map(ruleRowHtml).join('')}
+        </div>
+      </div>`;
+    })
+    .join('');
+
+  document.querySelectorAll('[data-toggle-rule-group]').forEach((btn) => {
+    btn.onclick = () => {
+      const key = btn.dataset.toggleRuleGroup;
+      if (ruleGroupsExpanded.has(key)) ruleGroupsExpanded.delete(key);
+      else ruleGroupsExpanded.add(key);
+      saveRuleGroupsExpanded();
+      renderRuleGroups();
+    };
+  });
+  document.querySelectorAll('[data-edit-rule]').forEach((btn) =>
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openRuleModal(state.rules.find((r) => r.id === btn.dataset.editRule));
+    })
+  );
+  document.querySelectorAll('[data-del-rule]').forEach((btn) =>
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const rule = state.rules.find((r) => r.id === btn.dataset.delRule);
+      if (!(await showConfirm('This stops it from matching any new mail.', { title: `Delete "${rule?.name || 'this rule'}"?`, confirmText: 'Delete', danger: true }))) return;
+      await api.deleteRule(btn.dataset.delRule);
+      loadCategories();
+    })
+  );
+}
+
 async function loadCategories() {
   showProgress();
   try {
@@ -1059,42 +1190,7 @@ async function loadCategories() {
     state.rules = rules;
 
     renderCategoryTree();
-
-    document.getElementById('rule-list').innerHTML = state.rules.length
-      ? state.rules
-          .map((r) => {
-            const actionBadges = [
-              r.mark_trashed ? '<span class="rule-action-badge trash">Delete</span>' : '',
-              r.mark_seen ? '<span class="rule-action-badge seen">Mark read</span>' : '',
-            ].join('');
-            const categoryLabel = r.category_id
-              ? `<span class="chip-dot" style="background:${r.category_color};display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;margin-right:0.4rem;"></span>${escapeHtml(categoryPath(r.category_id))}`
-              : '<span class="form-hint">(no label)</span>';
-            return `
-      <div class="rule-row">
-        <span>${escapeHtml(r.name)}</span>
-        <span class="form-hint">${r.field}</span>
-        <span class="form-hint">${r.operator.replace('_', ' ')}</span>
-        <span class="form-hint">"${escapeHtml(r.value)}"</span>
-        <span>${categoryLabel}</span>
-        <span class="rule-action-badges">${actionBadges}</span>
-        <span style="display:flex;gap:0.3rem;">
-          <button class="icon-btn" data-edit-rule="${r.id}" title="Edit">&#9998;</button>
-          <button class="icon-btn" data-del-rule="${r.id}" title="Delete">&times;</button>
-        </span>
-      </div>`;
-          })
-          .join('')
-      : '<div class="empty-state">No rules yet. Add one to start auto-sorting mail.</div>';
-    document.querySelectorAll('[data-edit-rule]').forEach((btn) => btn.addEventListener('click', () => openRuleModal(state.rules.find((r) => r.id === btn.dataset.editRule))));
-    document.querySelectorAll('[data-del-rule]').forEach((btn) =>
-      btn.addEventListener('click', async () => {
-        const rule = state.rules.find((r) => r.id === btn.dataset.delRule);
-        if (!(await showConfirm('This stops it from matching any new mail.', { title: `Delete "${rule?.name || 'this rule'}"?`, confirmText: 'Delete', danger: true }))) return;
-        await api.deleteRule(btn.dataset.delRule);
-        loadCategories();
-      })
-    );
+    renderRuleGroups();
   } catch (err) {
     document.getElementById('category-grid').innerHTML = `<div class="banner error">${escapeHtml(err.message)}</div>`;
   } finally {

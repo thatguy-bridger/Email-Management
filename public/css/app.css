@@ -229,15 +229,15 @@ body.dark-theme .status-pill.error { color: #f87171; }
 .category-chip.active { color: #fff; border-color: transparent; }
 .category-chip .chip-count { opacity: 0.75; font-weight: 700; }
 
-/* ===================== Message list / reading pane ===================== */
-.inbox-layout { display: grid; grid-template-columns: minmax(280px, 1fr) 1.4fr; gap: 1.25rem; align-items: start; }
-@media (max-width: 900px) { .inbox-layout { grid-template-columns: 1fr; } }
-
+/* ===================== Message list ===================== */
 .mailbox-tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
 .mailbox-tab { padding: 0.45rem 0.9rem; border-radius: 0.75rem; font-size: 0.82rem; font-weight: 600; border: 1px solid var(--glass-border); background: var(--glass-bg-strong); color: var(--text-secondary); cursor: pointer; }
 .mailbox-tab.active { background: var(--accent-grad); color: #fff; border-color: transparent; }
 
-.message-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 72vh; overflow-y: auto; padding-right: 0.25rem; }
+/* Full-width single list -- opening a message is a modal (see .modal-box-wide
+   / messageCardHtml) rather than a side-by-side reading pane, so there's no
+   second column height to match anymore; the page scrolls normally. */
+.message-list { display: flex; flex-direction: column; gap: 0.5rem; }
 .message-row {
   display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.85rem 1rem; border-radius: 1rem;
   border: 1px solid var(--glass-border); background: var(--glass-bg-strong); cursor: pointer;
@@ -267,8 +267,7 @@ body.dark-theme .status-pill.error { color: #f87171; }
 .msg-flag { color: #f59e0b; }
 .msg-select-checkbox { width: 1rem; height: 1rem; margin-top: 0.35rem; flex-shrink: 0; accent-color: var(--accent-1); cursor: pointer; }
 
-.reading-pane { min-height: 300px; }
-.reading-pane-empty { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 300px; color: var(--text-muted); font-size: 0.9rem; }
+.reading-pane-empty { display: flex; align-items: center; justify-content: center; min-height: 300px; color: var(--text-muted); font-size: 0.9rem; }
 .reading-pane-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--glass-border); }
 .reading-pane-header h2 { font-size: 1.2rem; margin: 0 0 0.4rem; }
 .reading-pane-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
@@ -283,10 +282,27 @@ body.dark-theme .status-pill.error { color: #f87171; }
 }
 
 /* ===================== Rule builder ===================== */
-.rule-row { display: grid; grid-template-columns: 1.2fr 0.8fr 0.7fr 1.4fr 1fr auto auto; gap: 0.5rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--glass-border); font-size: 0.82rem; }
+.rule-row { display: grid; grid-template-columns: 1.2fr 0.8fr 0.7fr 1.4fr 1fr auto auto; gap: 0.5rem; align-items: center; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--glass-border); font-size: 0.82rem; }
 .rule-row:last-child { border-bottom: none; }
 @media (max-width: 900px) { .rule-row { grid-template-columns: 1fr 1fr; } }
 .rule-priority-badge { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); }
+
+/* Rules grouped by target category into a collapsible dropdown per group --
+   a flat list of 70+ imported rules was unreadable, and priority order
+   (the thing that actually matters for evaluation) is unaffected by how
+   they're displayed here. */
+.rule-group { border-bottom: 1px solid var(--glass-border); }
+.rule-group:last-child { border-bottom: none; }
+.rule-group-header {
+  width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.25rem;
+  border: none; background: none; cursor: pointer; text-align: left; font: inherit; color: inherit;
+  border-radius: 0.6rem; transition: background-color 0.12s;
+}
+.rule-group-header:hover { background: var(--glass-bg); }
+.rule-group-label { font-weight: 700; flex: 1; }
+.rule-group-body { padding-left: 2.8rem; }
+.rule-group-body.hidden { display: none; }
+@media (max-width: 600px) { .rule-group-body { padding-left: 0; } }
 
 /* Rounded-square category icon (initials or a user-picked emoji) -- used
    standalone (not nested under a wrapper class), so its own rule has to
@@ -316,6 +332,22 @@ body.dark-theme .status-pill.error { color: #f87171; }
 .cat-tree-toggle:hover { background: var(--glass-bg); color: var(--text-primary); }
 .cat-tree-toggle.expanded { transform: rotate(90deg); }
 .cat-tree-children.hidden { display: none; }
+
+/* Bigger, higher-contrast expand/collapse button used specifically on the
+   Categories page's own tree (not the compact picker popover above) -- a
+   real bordered pill button with a visible resting state instead of a bare
+   glyph that only showed color on hover, per feedback that the small
+   version was easy to miss and hard to click precisely. */
+.cat-tree-expand-btn, .cat-tree-expand-spacer {
+  width: 2.2rem; height: 2.2rem; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+}
+.cat-tree-expand-btn {
+  border: 1px solid var(--glass-border); background: var(--glass-bg-strong); color: var(--text-secondary);
+  cursor: pointer; font-size: 1.1rem; border-radius: 9999px;
+  transition: transform 0.15s, background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.cat-tree-expand-btn:hover { background: var(--glass-bg); color: var(--text-primary); border-color: var(--accent-1); }
+.cat-tree-expand-btn.expanded { transform: rotate(90deg); border-color: var(--accent-1); color: var(--accent-1); }
 .cat-tree-row[draggable="true"] { cursor: grab; }
 .cat-tree-row.dragging { opacity: 0.4; cursor: grabbing; }
 .cat-tree-row.drag-over { background: var(--glow-accent); outline: 2px dashed var(--accent-1); outline-offset: -2px; border-radius: 0.6rem; }
@@ -377,12 +409,26 @@ body.dark-theme .banner.success { color: #86efac; }
   display: flex; align-items: center; justify-content: center; z-index: 60; padding: 1rem;
 }
 .modal-box {
+  position: relative;
   width: min(92vw, 460px); max-height: 88vh; overflow-y: auto; background: var(--glass-bg-strong);
   border: 1px solid var(--glass-border); border-radius: 1.5rem; padding: 1.5rem; box-shadow: var(--glass-shadow);
   backdrop-filter: blur(24px) saturate(180%);
 }
 .modal-box h2 { margin-top: 0; font-size: 1.3rem; }
+/* Roomier variant for reading a message -- the default form-width modal is
+   too narrow for email content (especially HTML mail with its own layout). */
+.modal-box-wide { width: min(94vw, 760px); }
 .modal-footer { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
+/* Explicit close control for content modals that don't have a Cancel/Save
+   footer to dismiss via (the message-reading modal) -- click-outside still
+   works too, but this makes closing discoverable without relying on it. */
+.modal-close-x {
+  position: absolute; top: 0.9rem; right: 0.9rem; width: 2rem; height: 2rem; border-radius: 9999px;
+  border: 1px solid var(--glass-border); background: var(--glass-bg-strong); color: var(--text-secondary);
+  font-size: 1.1rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background-color .12s, color .12s;
+}
+.modal-close-x:hover { background: var(--glass-bg); color: var(--text-primary); }
 
 /* ===================== Auth gate ===================== */
 .auth-gate { position: fixed; inset: 0; z-index: 55; display: flex; align-items: center; justify-content: center; padding: 1rem; }

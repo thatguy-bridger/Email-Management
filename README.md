@@ -38,15 +38,17 @@ extending this project, keep using this pattern rather than reintroducing
 - **Home** — dashboard: unread/needs-reply/flagged counts, per-category
   breakdown, per-account sync status, recent mail. The stat tiles are
   clickable and jump straight into a pre-filtered Inbox.
-- **Inbox** — message list + reading pane, 50 messages a page with a "Load
-  more" button for older mail. A category rail sits right above the list
-  (always visible, one click to filter), and every message row has a "Sort
-  into…" dropdown — the sorting UI Gmail hides behind Settings ▸ Filters is
-  the primary surface here instead. An "Unread only" toggle and "Mark all as
-  read" sit next to the mailbox tabs. Checkboxes on each row bring up a bulk
-  action bar (mark read / archive / trash several at once). Opening a
-  message that's part of a conversation shows the whole thread stacked
-  oldest-first, not just the one message.
+- **Inbox** — a single full-width message list (50 messages a page with a
+  "Load more" button for older mail), not a list-plus-reading-pane split.
+  Clicking a message opens it in a modal instead — thread messages (if it's
+  part of a conversation) stack oldest-first inside it, with flag/archive/
+  trash actions right there, and closing it (the × button, or click outside)
+  drops you right back on the list. A category rail sits right above the
+  list (always visible, one click to filter), and every message row has a
+  "Sort into…" dropdown — the sorting UI Gmail hides behind Settings ▸
+  Filters is the primary surface here instead. An "Unread only" toggle and
+  "Mark all as read" sit next to the mailbox tabs. Checkboxes on each row
+  bring up a bulk action bar (mark read / archive / trash several at once).
 - **Categories** — an arbitrary-depth tree (color-coded, message counts),
   not just Gmail's one-level nested labels: a category can have
   sub-categories, which can have their own sub-sub-categories, and so on.
@@ -65,7 +67,11 @@ extending this project, keep using this pattern rather than reintroducing
   while the parent-category field allows any category (parents can nest
   under other parents). Every picker also has an inline "+ New category" —
   type a name and it's created and selected on the spot, no need to back out
-  to "+ New Category" separately. Below the tree, the rule builder:
+  to "+ New Category" separately. Below the tree, the rule builder: rules
+  are grouped into a collapsible dropdown per target category (collapsed by
+  default, same reasoning as the tree above) instead of one long flat list
+  — a 70-rule Gmail import is unreadable any other way. Grouping is purely
+  a display convenience; evaluation order is unaffected; it's still
   `field operator value → category`, evaluated in
   priority order, first match wins. A rule's category is optional if it
   also does something automatic — delete on arrival, mark as read on
