@@ -258,9 +258,39 @@ body.dark-theme .status-pill.error { color: #f87171; }
 
 .category-card { display: flex; align-items: center; gap: 0.75rem; }
 .category-card .cat-icon { width: 2.4rem; height: 2.4rem; border-radius: 0.8rem; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; flex-shrink: 0; }
-.category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.9rem; margin-bottom: 1.5rem; }
-.category-group { margin-bottom: 0.5rem; }
-.category-group-title { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 0 0 0.6rem; }
+
+/* ===================== Category tree ===================== */
+.cat-tree { margin-bottom: 1.5rem; }
+.cat-tree-row {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.25rem;
+  border-bottom: 1px solid var(--glass-border);
+}
+.cat-tree-row:last-child { border-bottom: none; }
+.cat-tree-name { font-weight: 700; flex-shrink: 0; }
+.cat-tree-row .form-hint { flex: 1; }
+.cat-tree-toggle, .cat-tree-toggle-spacer {
+  width: 1.2rem; height: 1.2rem; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+}
+.cat-tree-toggle { border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 0.7rem; transition: transform 0.15s; }
+.cat-tree-toggle.expanded { transform: rotate(90deg); }
+.cat-tree-children.hidden { display: none; }
+
+/* Reusable category tree picker popover -- replaces flat <select>s on the
+   rule modal, category modal's parent picker, and each Inbox row's "Sort
+   into..." control, so N-level trees stay collapsible everywhere instead of
+   dumping every category flat into one long list. */
+.cat-picker-btn { cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.cat-picker-btn::after { content: '\25BE'; opacity: 0.6; font-size: 0.7rem; }
+.cat-picker-popover {
+  max-height: 320px; overflow-y: auto; padding: 0.4rem; box-shadow: var(--glass-shadow);
+}
+.cat-picker-row {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.5rem; border-radius: 0.5rem;
+  cursor: pointer; font-size: 0.84rem; white-space: nowrap;
+}
+.cat-picker-row:hover { background: var(--glass-bg); }
+.cat-picker-row.active { background: var(--accent-grad); color: #fff; }
+.cat-picker-sep { border-top: 1px solid var(--glass-border); margin: 0.3rem 0; }
 .rule-action-badges { display: flex; gap: 0.3rem; }
 .rule-action-badge { font-size: 0.62rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 9999px; text-transform: uppercase; }
 .rule-action-badge.trash { background: rgba(239,68,68,.15); color: var(--danger); }

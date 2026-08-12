@@ -71,6 +71,7 @@ function initPalette() {
 
 // ===================== Navigation =====================
 function switchView(view) {
+  closeCategoryPicker();
   state.view = view;
   document.querySelectorAll('.app-view').forEach((el) => el.classList.toggle('hidden', el.id !== `view-${view}`));
   document.querySelectorAll('.nav-link').forEach((el) => el.classList.toggle('active', el.dataset.view === view));
@@ -104,6 +105,140 @@ function timeAgo(dateStr) {
 function catById(id) {
   return state.categories.find((c) => c.id === id);
 }
+function categoryChildren(parentId) {
+  return state.categories
+    .filter((c) => (c.parent_id || null) === (parentId || null))
+    .sort((a, b) => a.sort_order - b.sort_order);
+}
+function categoryPath(id) {
+  const names = [];
+  let cur = catById(id);
+  let guard = 0;
+  while (cur && guard++ < 50) {
+    names.unshift(cur.name);
+    cur = cur.parent_id ? catById(cur.parent_id) : null;
+  }
+  return names.join(' / ');
+}
+// Used to keep a category out of its own parent-picker options -- a
+// category (or any of its descendants) can never become its own ancestor.
+function categoryDescendantIds(id) {
+  const ids = new Set();
+  const walk = (parentId) => {
+    for (const c of categoryChildren(parentId)) {
+      ids.add(c.id);
+      walk(c.id);
+    }
+  };
+  walk(id);
+  return ids;
+}
+
+// ===================== Category tree picker (popover) =====================
+// One shared popover, reused everywhere a category needs picking (rule
+// modal, category modal's parent field, each Inbox row's "Sort into..."):
+// an arbitrary-depth tree with per-node expand/collapse, rather than a flat
+// <select> listing every category (which is what caused the clutter with 70+
+// imported categories in the first place).
+let activeCategoryPicker = null;
+
+function closeCategoryPicker() {
+  if (!activeCategoryPicker) return;
+  activeCategoryPicker.el.remove();
+  document.removeEventListener('mousedown', activeCategoryPicker.onDocClick, true);
+  window.removeEventListener('scroll', activeCategoryPicker.onDocClick, true);
+  activeCategoryPicker = null;
+}
+
+function positionCategoryPicker(popover, anchorEl) {
+  const rect = anchorEl.getBoundingClientRect();
+  popover.style.position = 'fixed';
+  popover.style.minWidth = `${Math.max(rect.width, 220)}px`;
+  popover.style.maxWidth = '320px';
+  popover.style.zIndex = '2000';
+  const spaceBelow = window.innerHeight - rect.bottom;
+  if (spaceBelow < 260 && rect.top > 260) {
+    popover.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+    popover.style.top = 'auto';
+  } else {
+    popover.style.top = `${rect.bottom + 6}px`;
+    popover.style.bottom = 'auto';
+  }
+  popover.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 340))}px`;
+}
+
+// opts: selectedId, noneLabel (string to show a "clear"/"top level" row, or
+// null to omit it), excludeIds (Set -- hides categories that shouldn't be
+// selectable, e.g. a category and its own descendants when picking its
+// parent), onSelect(idOrNull).
+function openCategoryPicker(anchorEl, opts) {
+  closeCategoryPicker();
+  const { selectedId = null, noneLabel = null, excludeIds = new Set(), onSelect } = opts;
+
+  const popover = document.createElement('div');
+  popover.className = 'cat-picker-popover glass-card';
+  document.body.appendChild(popover);
+
+  // Expand every ancestor of the current selection so it's visible without
+  // the user having to click down into the tree just to see what's picked.
+  const expanded = new Set();
+  if (selectedId) {
+    let cur = catById(selectedId);
+    while (cur && cur.parent_id) {
+      expanded.add(cur.parent_id);
+      cur = catById(cur.parent_id);
+    }
+  }
+
+  function rowHtml(c, depth) {
+    const children = categoryChildren(c.id).filter((ch) => !excludeIds.has(ch.id));
+    const hasChildren = children.length > 0;
+    const isExpanded = expanded.has(c.id);
+    return `
+      <div class="cat-picker-row ${c.id === selectedId ? 'active' : ''}" data-pick-cat="${c.id}" style="padding-left:${0.5 + depth * 1.1}rem;">
+        ${hasChildren ? `<span class="cat-tree-toggle ${isExpanded ? 'expanded' : ''}" data-pick-toggle="${c.id}">&#9656;</span>` : '<span class="cat-tree-toggle-spacer"></span>'}
+        <span class="chip-dot" style="background:${c.color};width:0.55rem;height:0.55rem;border-radius:50%;flex-shrink:0;"></span>
+        <span>${escapeHtml(c.name)}</span>
+      </div>
+      ${hasChildren ? `<div class="${isExpanded ? '' : 'hidden'}" data-pick-children-of="${c.id}">${children.map((ch) => rowHtml(ch, depth + 1)).join('')}</div>` : ''}`;
+  }
+
+  function render() {
+    const top = categoryChildren(null).filter((c) => !excludeIds.has(c.id));
+    popover.innerHTML =
+      (noneLabel !== null
+        ? `<div class="cat-picker-row ${selectedId === null ? 'active' : ''}" data-pick-cat="">${escapeHtml(noneLabel)}</div><div class="cat-picker-sep"></div>`
+        : '') + (top.length ? top.map((c) => rowHtml(c, 0)).join('') : '<div class="form-hint" style="padding:0.5rem;">No categories yet.</div>');
+
+    popover.querySelectorAll('[data-pick-toggle]').forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const id = el.dataset.pickToggle;
+        if (expanded.has(id)) expanded.delete(id);
+        else expanded.add(id);
+        render();
+      };
+    });
+    popover.querySelectorAll('[data-pick-cat]').forEach((el) => {
+      el.onclick = (e) => {
+        e.stopPropagation();
+        const id = el.dataset.pickCat || null;
+        closeCategoryPicker();
+        onSelect(id);
+      };
+    });
+  }
+  render();
+  positionCategoryPicker(popover, anchorEl);
+
+  const onDocClick = (e) => {
+    if (!popover.contains(e.target) && e.target !== anchorEl) closeCategoryPicker();
+  };
+  // Deferred so the click that opened the popover doesn't immediately close it.
+  setTimeout(() => document.addEventListener('mousedown', onDocClick, true), 0);
+  window.addEventListener('scroll', onDocClick, true);
+  activeCategoryPicker = { el: popover, onDocClick };
+}
 function initials(name) {
   return (name || '?').trim().charAt(0).toUpperCase();
 }
@@ -121,6 +256,10 @@ function openModal(html, onMount) {
 }
 function closeModal() {
   document.getElementById('modal-root').innerHTML = '';
+  // The category picker popover renders into document.body (so it can
+  // float outside the modal box), so it won't get cleared by wiping
+  // modal-root above -- close it explicitly or it's left orphaned on screen.
+  closeCategoryPicker();
 }
 
 // ===================== HOME =====================
@@ -373,10 +512,7 @@ function messageRowHtml(m) {
           </div>
           <div class="msg-subject">${escapeHtml(m.subject)}</div>
           <div class="msg-snippet">${escapeHtml(m.snippet)}</div>
-          <select class="sort-select" data-sort-id="${m.id}" onclick="event.stopPropagation()">
-            <option value="">Sort into&hellip;</option>
-            ${state.categories.map((c) => `<option value="${c.id}" ${c.id === m.category_id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
-          </select>
+          <button type="button" class="sort-select cat-picker-btn" data-sort-btn="${m.id}" onclick="event.stopPropagation()">${cat ? escapeHtml(cat.name) : 'Sort into&hellip;'}</button>
         </div>
       </div>`;
 }
@@ -396,13 +532,21 @@ function wireMessageRows(container) {
       updateBulkBar();
     };
   });
-  container.querySelectorAll('[data-sort-id]').forEach((sel) => {
-    sel.onchange = async () => {
-      if (!sel.value) return;
-      await api.updateMessage(sel.dataset.sortId, { categoryId: sel.value });
-      await refreshCategories();
-      renderCategoryRail();
-      loadMessages();
+  container.querySelectorAll('[data-sort-btn]').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.sortBtn;
+      const msg = state.inbox.messages.find((m) => m.id === id);
+      openCategoryPicker(btn, {
+        selectedId: msg?.category_id || null,
+        noneLabel: 'Uncategorized',
+        onSelect: async (categoryId) => {
+          await api.updateMessage(id, { categoryId });
+          await refreshCategories();
+          renderCategoryRail();
+          loadMessages();
+        },
+      });
     };
   });
   const loadMoreBtn = document.getElementById('load-more-messages-btn');
@@ -549,51 +693,82 @@ function sanitizeHtmlBody(html) {
 }
 
 // ===================== CATEGORIES / RULES =====================
+
+// Which categories are expanded on the Categories page tree, persisted
+// across visits/reloads. Starts empty (everything collapsed but the top
+// level) so a large imported label tree doesn't dump every sub/sub-sub
+// category on screen at once.
+const CAT_TREE_EXPANDED_KEY = 'mail_cat_tree_expanded';
+function loadCategoryTreeExpanded() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(CAT_TREE_EXPANDED_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+function saveCategoryTreeExpanded() {
+  localStorage.setItem(CAT_TREE_EXPANDED_KEY, JSON.stringify([...categoryTreeExpanded]));
+}
+const categoryTreeExpanded = loadCategoryTreeExpanded();
+
+function categoryTreeRowHtml(c, depth) {
+  const children = categoryChildren(c.id);
+  const hasChildren = children.length > 0;
+  const isExpanded = categoryTreeExpanded.has(c.id);
+  return `
+    <div class="cat-tree-row" style="padding-left:${depth * 1.5}rem;">
+      ${hasChildren ? `<button type="button" class="cat-tree-toggle ${isExpanded ? 'expanded' : ''}" data-toggle-cat="${c.id}" title="${isExpanded ? 'Collapse' : 'Expand'}">&#9656;</button>` : '<span class="cat-tree-toggle-spacer"></span>'}
+      <div class="cat-icon" style="background:${c.color};width:1.9rem;height:1.9rem;font-size:0.78rem;">${initials(c.name)}</div>
+      <span class="cat-tree-name">${escapeHtml(c.name)}</span>
+      <span class="form-hint">${c.total ?? 0} total &middot; ${c.unread_count ?? 0} unread${hasChildren ? ` &middot; ${children.length} sub${children.length === 1 ? '' : 's'}` : ''}</span>
+      <button class="icon-btn" data-add-sub-cat="${c.id}" title="Add subcategory">+</button>
+      ${c.is_builtin ? '' : `<button class="icon-btn" data-edit-cat="${c.id}" title="Edit">&#9998;</button><button class="icon-btn" data-del-cat="${c.id}" title="Delete">&times;</button>`}
+    </div>
+    ${hasChildren ? `<div class="cat-tree-children ${isExpanded ? '' : 'hidden'}" data-children-of="${c.id}">${children.map((ch) => categoryTreeRowHtml(ch, depth + 1)).join('')}</div>` : ''}`;
+}
+
+function renderCategoryTree() {
+  const top = categoryChildren(null);
+  document.getElementById('category-grid').innerHTML = top.length
+    ? `<div class="cat-tree glass-card">${top.map((c) => categoryTreeRowHtml(c, 0)).join('')}</div>`
+    : '<div class="empty-state">No categories yet.</div>';
+
+  document.querySelectorAll('[data-toggle-cat]').forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset.toggleCat;
+      if (categoryTreeExpanded.has(id)) categoryTreeExpanded.delete(id);
+      else categoryTreeExpanded.add(id);
+      saveCategoryTreeExpanded();
+      renderCategoryTree();
+    };
+  });
+  document.querySelectorAll('[data-add-sub-cat]').forEach((btn) => {
+    btn.onclick = () => openCategoryModal(null, btn.dataset.addSubCat);
+  });
+  document.querySelectorAll('[data-edit-cat]').forEach((btn) => {
+    btn.onclick = () => openCategoryModal(catById(btn.dataset.editCat));
+  });
+  document.querySelectorAll('[data-del-cat]').forEach((btn) => {
+    btn.onclick = async () => {
+      const cat = catById(btn.dataset.delCat);
+      const childCount = categoryChildren(cat.id).length;
+      const msg = childCount
+        ? `Delete this category? Mail in it becomes uncategorized, and its ${childCount} subcategor${childCount === 1 ? 'y moves' : 'ies move'} up a level.`
+        : 'Delete this category? Mail in it becomes uncategorized.';
+      if (!confirm(msg)) return;
+      await api.deleteCategory(btn.dataset.delCat);
+      loadCategories();
+    };
+  });
+}
+
 async function loadCategories() {
   try {
     await refreshCategories();
     const { rules } = await api.listRules();
     state.rules = rules;
 
-    const categoryCardHtml = (c) => `
-      <div class="glass-card category-card">
-        <div class="cat-icon" style="background:${c.color}">${initials(c.name)}</div>
-        <div style="flex:1;">
-          <div style="font-weight:700;">${escapeHtml(c.name)}</div>
-          <div class="form-hint">${c.total ?? 0} total &middot; ${c.unread_count ?? 0} unread</div>
-        </div>
-        ${c.is_builtin ? '' : `<button class="icon-btn" data-edit-cat="${c.id}" title="Edit">&#9998;</button><button class="icon-btn" data-del-cat="${c.id}" title="Delete">&times;</button>`}
-      </div>`;
-
-    // Groups mirror imported Gmail label prefixes ("Missionaries/Name")
-    // without a full parent/child model -- just a header over a sub-grid.
-    // Ungrouped categories (including the built-in Primary) render first,
-    // flat, no header.
-    const ungrouped = state.categories.filter((c) => !c.group_name);
-    const grouped = new Map();
-    for (const c of state.categories) {
-      if (!c.group_name) continue;
-      if (!grouped.has(c.group_name)) grouped.set(c.group_name, []);
-      grouped.get(c.group_name).push(c);
-    }
-    let categoryHtml = ungrouped.length ? `<div class="category-grid">${ungrouped.map(categoryCardHtml).join('')}</div>` : '';
-    for (const [groupName, cats] of grouped) {
-      categoryHtml += `
-        <div class="category-group">
-          <div class="category-group-title">${escapeHtml(groupName)}</div>
-          <div class="category-grid">${cats.map(categoryCardHtml).join('')}</div>
-        </div>`;
-    }
-    document.getElementById('category-grid').innerHTML =
-      categoryHtml || '<div class="empty-state">No categories yet.</div>';
-    document.querySelectorAll('[data-edit-cat]').forEach((btn) => btn.addEventListener('click', () => openCategoryModal(catById(btn.dataset.editCat))));
-    document.querySelectorAll('[data-del-cat]').forEach((btn) =>
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this category? Mail in it becomes uncategorized.')) return;
-        await api.deleteCategory(btn.dataset.delCat);
-        loadCategories();
-      })
-    );
+    renderCategoryTree();
 
     document.getElementById('rule-list').innerHTML = state.rules.length
       ? state.rules
@@ -603,7 +778,7 @@ async function loadCategories() {
               r.mark_seen ? '<span class="rule-action-badge seen">Mark read</span>' : '',
             ].join('');
             const categoryLabel = r.category_id
-              ? `<span class="chip-dot" style="background:${r.category_color};display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;margin-right:0.4rem;"></span>${escapeHtml(r.category_group ? `${r.category_group}/${r.category_name}` : r.category_name)}`
+              ? `<span class="chip-dot" style="background:${r.category_color};display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;margin-right:0.4rem;"></span>${escapeHtml(categoryPath(r.category_id))}`
               : '<span class="form-hint">(no label)</span>';
             return `
       <div class="rule-row">
@@ -653,16 +828,26 @@ async function loadCategories() {
   };
 }
 
-function openCategoryModal(category) {
+// presetParentId: when opening via a tree row's "+" (add subcategory)
+// button, pre-selects that row as the parent for a brand-new category.
+function openCategoryModal(category, presetParentId) {
   const isEdit = !!category;
+  let selectedParentId = isEdit ? category.parent_id || null : presetParentId || null;
+  // A category can never become its own ancestor -- hide it and its whole
+  // subtree from its own parent picker (the backend also rejects this, but
+  // filtering it out here means you can't even see the option).
+  const excludeIds = isEdit ? new Set([category.id, ...categoryDescendantIds(category.id)]) : new Set();
+
   openModal(
     `
     <h2>${isEdit ? 'Edit category' : 'New category'}</h2>
     <div class="form-field"><label>Name</label><input class="form-input" id="cat-name" value="${escapeHtml(category?.name || '')}"></div>
     <div class="form-field">
-      <label>Group (optional)</label>
-      <input class="form-input" id="cat-group" value="${escapeHtml(category?.group_name || '')}" placeholder="e.g. Newsletters">
-      <span class="form-hint">Clusters this category under a header on this page, like Gmail's nested labels.</span>
+      <label>Parent category (optional)</label>
+      <button type="button" class="form-select cat-picker-btn" id="cat-parent-btn" style="width:100%;">
+        <span id="cat-parent-btn-label">${selectedParentId ? escapeHtml(categoryPath(selectedParentId)) : 'Top level'}</span>
+      </button>
+      <span class="form-hint">Nest this under another category to build sub/sub-subcategories -- the tree collapses on the Categories page so this doesn't add clutter.</span>
     </div>
     <div class="form-field"><label>Color</label><input type="color" id="cat-color" value="${category?.color || '#6366f1'}" style="width:4rem;height:2.4rem;border:none;background:none;"></div>
     <div id="cat-modal-error"></div>
@@ -671,15 +856,25 @@ function openCategoryModal(category) {
       <button class="btn btn-primary" id="cat-save">${isEdit ? 'Save' : 'Create'}</button>
     </div>`,
     (overlay) => {
+      overlay.querySelector('#cat-parent-btn').onclick = () => {
+        openCategoryPicker(overlay.querySelector('#cat-parent-btn'), {
+          selectedId: selectedParentId,
+          noneLabel: 'Top level',
+          excludeIds,
+          onSelect: (id) => {
+            selectedParentId = id;
+            overlay.querySelector('#cat-parent-btn-label').textContent = id ? categoryPath(id) : 'Top level';
+          },
+        });
+      };
       overlay.querySelector('#cat-cancel').onclick = closeModal;
       overlay.querySelector('#cat-save').onclick = async () => {
         const name = overlay.querySelector('#cat-name').value.trim();
-        const groupName = overlay.querySelector('#cat-group').value.trim();
         const color = overlay.querySelector('#cat-color').value;
         if (!name) return;
         try {
-          if (isEdit) await api.updateCategory(category.id, { name, color, groupName: groupName || null });
-          else await api.createCategory({ name, color, groupName: groupName || null });
+          if (isEdit) await api.updateCategory(category.id, { name, color, parentId: selectedParentId });
+          else await api.createCategory({ name, color, parentId: selectedParentId });
           closeModal();
           loadCategories();
         } catch (err) {
@@ -694,6 +889,7 @@ function openRuleModal(rule) {
   const isEdit = !!rule;
   const fields = ['from', 'to', 'domain', 'subject', 'body'];
   const operators = ['contains', 'equals', 'starts_with', 'ends_with'];
+  let selectedCategoryId = rule?.category_id || null;
   openModal(
     `
     <h2>${isEdit ? 'Edit rule' : 'New rule'}</h2>
@@ -705,10 +901,9 @@ function openRuleModal(rule) {
     <div class="form-field"><label>Value</label><input class="form-input" id="rule-value" value="${escapeHtml(rule?.value || '')}" placeholder="e.g. delta.com"></div>
     <div class="form-field">
       <label>Category (optional)</label>
-      <select class="form-select" id="rule-category">
-        <option value="">(no label)</option>
-        ${state.categories.map((c) => `<option value="${c.id}" ${rule?.category_id === c.id ? 'selected' : ''}>${escapeHtml(c.group_name ? `${c.group_name}/${c.name}` : c.name)}</option>`).join('')}
-      </select>
+      <button type="button" class="form-select cat-picker-btn" id="rule-category-btn" style="width:100%;">
+        <span id="rule-category-btn-label">${selectedCategoryId ? escapeHtml(categoryPath(selectedCategoryId)) : '(no label)'}</span>
+      </button>
     </div>
     <div class="form-field">
       <label style="display:flex;align-items:center;gap:0.5rem;font-weight:600;color:var(--text-primary);">
@@ -725,6 +920,16 @@ function openRuleModal(rule) {
       <button class="btn btn-primary" id="rule-save">${isEdit ? 'Save' : 'Create'}</button>
     </div>`,
     (overlay) => {
+      overlay.querySelector('#rule-category-btn').onclick = () => {
+        openCategoryPicker(overlay.querySelector('#rule-category-btn'), {
+          selectedId: selectedCategoryId,
+          noneLabel: '(no label)',
+          onSelect: (id) => {
+            selectedCategoryId = id;
+            overlay.querySelector('#rule-category-btn-label').textContent = id ? categoryPath(id) : '(no label)';
+          },
+        });
+      };
       overlay.querySelector('#rule-cancel').onclick = closeModal;
       overlay.querySelector('#rule-save').onclick = async () => {
         const payload = {
@@ -732,7 +937,7 @@ function openRuleModal(rule) {
           field: overlay.querySelector('#rule-field').value,
           operator: overlay.querySelector('#rule-operator').value,
           value: overlay.querySelector('#rule-value').value.trim(),
-          categoryId: overlay.querySelector('#rule-category').value || null,
+          categoryId: selectedCategoryId,
           markTrashed: overlay.querySelector('#rule-trash').checked,
           markSeen: overlay.querySelector('#rule-seen').checked,
           priority: parseInt(overlay.querySelector('#rule-priority').value, 10) || 0,

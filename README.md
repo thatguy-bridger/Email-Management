@@ -47,11 +47,16 @@ extending this project, keep using this pattern rather than reintroducing
   action bar (mark read / archive / trash several at once). Opening a
   message that's part of a conversation shows the whole thread stacked
   oldest-first, not just the one message.
-- **Categories** — category cards (color-coded, message counts), optionally
-  clustered under a group header (e.g. every individual "Missionaries/Name"
-  category groups under a "Missionaries" heading) — a light, one-level
-  version of Gmail's nested labels, not a full parent/child graph. Below
-  that, the rule builder: `field operator value → category`, evaluated in
+- **Categories** — an arbitrary-depth tree (color-coded, message counts),
+  not just Gmail's one-level nested labels: a category can have
+  sub-categories, which can have their own sub-sub-categories, and so on.
+  Each row collapses/expands independently (state persisted per-browser),
+  and starts collapsed below the top level specifically so a large imported
+  label tree doesn't dump everything on screen at once. Every place a
+  category gets picked (this page's parent-category field, a rule's
+  category, an Inbox row's "Sort into…") uses the same collapsible tree
+  popover instead of a flat list, for the same reason. Below the tree,
+  the rule builder: `field operator value → category`, evaluated in
   priority order, first match wins. A rule's category is optional if it
   also does something automatic — delete on arrival, mark as read on
   arrival, or both (Gmail's filter actions, minus "star"/"important" which

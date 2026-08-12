@@ -47,11 +47,42 @@ CREATE TABLE IF NOT EXISTS categories (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
--- Lightweight nesting (one level) so imported Gmail labels like
--- "Missionaries/Brady Christensen" can cluster under a "Missionaries"
--- header in the UI without a full parent/child category graph. NULL means
--- ungrouped, shown standalone.
-ALTER TABLE categories ADD COLUMN IF NOT EXISTS group_name TEXT;
+
+-- True arbitrary-depth tree (superseded the one-level group_name column
+-- below, which couldn't express "sub-sub-categories"). ON DELETE SET NULL
+-- rather than CASCADE: deleting a parent promotes its children to
+-- top-level instead of wiping out an entire branch.
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS parent_id TEXT REFERENCES categories(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);
+
+-- One-time, idempotent migration: turn every existing flat group_name
+-- string into a real parent category row, so data from before the tree
+-- model existed doesn't just vanish. Cheap no-op on every run after the
+-- first, since by then no row has group_name set anymore.
+DO $$
+DECLARE
+  r RECORD;
+  parent_id_var TEXT;
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'categories' AND column_name = 'group_name') THEN
+    FOR r IN SELECT DISTINCT user_id, group_name FROM categories WHERE group_name IS NOT NULL LOOP
+      SELECT id INTO parent_id_var FROM categories
+        WHERE user_id = r.user_id AND name = r.group_name AND parent_id IS NULL AND group_name IS NULL
+        LIMIT 1;
+      IF parent_id_var IS NULL THEN
+        -- md5(random + clock) rather than gen_random_uuid(): this file's
+        -- whole point is not depending on any Postgres extension or
+        -- version-gated builtin, and every Postgres version has these.
+        parent_id_var := 'cat-' || md5(random()::text || clock_timestamp()::text);
+        INSERT INTO categories (id, user_id, name, color, icon, is_builtin, sort_order)
+          VALUES (parent_id_var, r.user_id, r.group_name, '#6366f1', 'folder', false, 0);
+      END IF;
+      UPDATE categories SET parent_id = parent_id_var WHERE user_id = r.user_id AND group_name = r.group_name;
+    END LOOP;
+  END IF;
+END $$;
+
+ALTER TABLE categories DROP COLUMN IF EXISTS group_name;
 
 CREATE TABLE IF NOT EXISTS rules (
   id TEXT PRIMARY KEY,
