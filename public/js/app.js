@@ -395,8 +395,7 @@ async function loadHome() {
               const cat = catById(m.category_id);
               return `
         <div class="message-row ${m.seen ? '' : 'unread'}" data-open-message="${m.id}" style="margin-bottom:0.5rem;">
-          ${m.seen ? '' : '<span class="unread-dot"></span>'}
-          ${cat ? `<span class="msg-cat-dot" style="background:${cat.color}"></span>` : ''}
+          ${cat ? `<span class="msg-cat-dot" style="background:${cat.color}"></span>` : '<span class="msg-cat-dot" style="background:transparent"></span>'}
           <div class="msg-main">
             <div class="msg-top-line"><span class="msg-from">${escapeHtml(m.from_name || m.from_email)}</span><span class="msg-date">${timeAgo(m.date)}</span></div>
             <div class="msg-subject">${escapeHtml(m.subject)}</div>
@@ -570,7 +569,6 @@ function messageRowHtml(m) {
   return `
       <div class="message-row ${m.seen ? '' : 'unread'} ${m.id === state.inbox.selectedId ? 'selected' : ''}" data-id="${m.id}">
         <input type="checkbox" class="msg-select-checkbox" data-select-id="${m.id}" ${state.inbox.selected.has(m.id) ? 'checked' : ''} onclick="event.stopPropagation()">
-        ${m.seen ? '' : '<span class="unread-dot"></span>'}
         ${cat ? `<span class="msg-cat-dot" style="background:${cat.color}"></span>` : '<span class="msg-cat-dot" style="background:transparent"></span>'}
         <div class="msg-main">
           <div class="msg-top-line">

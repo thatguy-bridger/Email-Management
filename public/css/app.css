@@ -1,7 +1,7 @@
 /* ===================== Design tokens (glassmorphism) =====================
    Mirrors the School Dashboard's design system: frosted glass surfaces,
-   a floating pill topbar, gradient headings, ambient blurred color blobs,
-   and a palette system swapped via [data-palette] on <body>. */
+   a floating pill topbar, gradient headings, and a palette system swapped
+   via [data-palette] on <body>. */
 :root {
   --bg-solid: #eef1f8;
   --glass-bg: rgba(255, 255, 255, 0.42);
@@ -59,14 +59,6 @@ body {
 }
 @media (min-width: 640px) { body { padding: 2rem; } }
 
-.bg-blob {
-  position: fixed; border-radius: 9999px; filter: blur(95px); opacity: 0.7;
-  z-index: 0; pointer-events: none; transition: opacity 0.6s ease-in-out, background-color .6s ease-in-out;
-}
-body.dark-theme .bg-blob { opacity: 0.28; }
-.bg-blob-1 { width: 40rem; height: 40rem; top: -6rem; left: -6rem; background: var(--accent-1); }
-.bg-blob-2 { width: 36rem; height: 36rem; bottom: -4rem; right: -4rem; background: var(--accent-3); }
-.bg-blob-3 { width: 34rem; height: 34rem; top: 35%; left: 50%; background: var(--accent-2); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -222,7 +214,17 @@ body.dark-theme .status-pill.error { color: #f87171; }
 }
 .message-row:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
 .message-row.selected { border-color: var(--accent-1); box-shadow: 0 0 0 2px var(--glow-accent); }
-.message-row.unread .msg-subject, .message-row.unread .msg-from { font-weight: 800; }
+/* Unread mail should read as clearly "new" against a list of already-read
+   mail: bolder + full-contrast text plus a colored left edge, vs. read rows
+   which fall back to muted, lighter-weight text. The category dot itself
+   stays purely about category color either way -- it's not also doing
+   double duty as a second "this is unread" signal anymore. A border (not
+   box-shadow) carries the left edge so it composes independently of the
+   hover/selected box-shadows above instead of one overwriting the other. */
+.message-row { border-left: 3px solid transparent; }
+.message-row.unread { border-left-color: var(--accent-1); }
+.message-row.unread .msg-subject, .message-row.unread .msg-from { font-weight: 800; color: var(--text-primary); }
+.message-row:not(.unread) .msg-subject, .message-row:not(.unread) .msg-from { font-weight: 500; color: var(--text-muted); }
 .message-row .msg-main { flex: 1; min-width: 0; }
 .message-row .msg-top-line { display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
 .msg-from { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -232,7 +234,6 @@ body.dark-theme .status-pill.error { color: #f87171; }
 .msg-badges { display: flex; gap: 0.3rem; margin-top: 0.35rem; }
 .msg-cat-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; margin-top: 0.4rem; }
 .msg-flag { color: #f59e0b; }
-.unread-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--accent-1); flex-shrink: 0; margin-top: 0.45rem; }
 .msg-select-checkbox { width: 1rem; height: 1rem; margin-top: 0.35rem; flex-shrink: 0; accent-color: var(--accent-1); cursor: pointer; }
 
 .reading-pane { min-height: 300px; }
