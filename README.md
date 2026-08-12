@@ -49,6 +49,9 @@ extending this project, keep using this pattern rather than reintroducing
   Filters is the primary surface here instead. An "Unread only" toggle and
   "Mark all as read" sit next to the mailbox tabs. Checkboxes on each row
   bring up a bulk action bar (mark read / archive / trash several at once).
+  Unread mail gets a colored left edge matching its category (not a fixed
+  color) so unread state and category are both visible at a glance; already
+  categorized-uncategorized unread mail falls back to the accent color.
 - **Categories** — an arbitrary-depth tree (color-coded, message counts),
   not just Gmail's one-level nested labels: a category can have
   sub-categories, which can have their own sub-sub-categories, and so on.
@@ -67,7 +70,10 @@ extending this project, keep using this pattern rather than reintroducing
   while the parent-category field allows any category (parents can nest
   under other parents). Every picker also has an inline "+ New category" —
   type a name and it's created and selected on the spot, no need to back out
-  to "+ New Category" separately. Below the tree, the rule builder: rules
+  to "+ New Category" separately. A checkbox on every non-Primary row
+  enables mass selection — the bulk bar that appears can move every selected
+  category under a new parent in one go (same "would demote the target"
+  confirmation as a single drag) or delete them all at once. Below the tree, the rule builder: rules
   are grouped into a collapsible dropdown per target category (collapsed by
   default, same reasoning as the tree above) instead of one long flat list
   — a 70-rule Gmail import is unreadable any other way. Grouping is purely

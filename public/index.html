@@ -149,6 +149,13 @@
               <button class="btn btn-primary" id="add-category-btn">+ New Category</button>
             </div>
           </div>
+          <div class="glass-card hidden" id="category-bulk-bar" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;padding:0.65rem 1rem;">
+            <span class="form-hint" id="category-bulk-count"></span>
+            <div style="flex:1;"></div>
+            <button class="btn btn-sm btn-ghost" id="category-bulk-move-btn">Move to&hellip;</button>
+            <button class="btn btn-sm btn-danger" id="category-bulk-delete-btn">Delete</button>
+            <button class="btn btn-sm btn-ghost" id="category-bulk-cancel-btn">Cancel</button>
+          </div>
           <div id="category-grid"></div>
 
           <hr style="border:0;border-top:1px solid var(--glass-border);margin:1.5rem 0;">

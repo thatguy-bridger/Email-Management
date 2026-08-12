@@ -500,8 +500,9 @@ async function loadHome() {
         : stats.recent
             .map((m) => {
               const cat = catById(m.category_id);
+              const unreadStyle = !m.seen && cat ? `border-left-color:${cat.color};` : '';
               return `
-        <div class="message-row ${m.seen ? '' : 'unread'}" data-open-message="${m.id}" style="margin-bottom:0.5rem;">
+        <div class="message-row ${m.seen ? '' : 'unread'}" data-open-message="${m.id}" style="margin-bottom:0.5rem;${unreadStyle}">
           ${cat ? `<span class="msg-cat-dot" style="background:${cat.color}"></span>` : '<span class="msg-cat-dot" style="background:transparent"></span>'}
           <div class="msg-main">
             <div class="msg-top-line"><span class="msg-from">${escapeHtml(m.from_name || m.from_email)}</span><span class="msg-date">${timeAgo(m.date)}</span></div>
@@ -678,8 +679,9 @@ const MESSAGES_PAGE_SIZE = 50;
 
 function messageRowHtml(m) {
   const cat = catById(m.category_id);
+  const unreadStyle = !m.seen && cat ? ` style="border-left-color:${cat.color};"` : '';
   return `
-      <div class="message-row ${m.seen ? '' : 'unread'} ${m.id === state.inbox.selectedId ? 'selected' : ''}" data-id="${m.id}">
+      <div class="message-row ${m.seen ? '' : 'unread'} ${m.id === state.inbox.selectedId ? 'selected' : ''}" data-id="${m.id}"${unreadStyle}>
         <input type="checkbox" class="msg-select-checkbox" data-select-id="${m.id}" ${state.inbox.selected.has(m.id) ? 'checked' : ''} onclick="event.stopPropagation()">
         ${cat ? `<span class="msg-cat-dot" style="background:${cat.color}"></span>` : '<span class="msg-cat-dot" style="background:transparent"></span>'}
         <div class="msg-main">
@@ -925,15 +927,21 @@ function saveCategoryTreeExpanded() {
 }
 const categoryTreeExpanded = loadCategoryTreeExpanded();
 
+// Mass-selection for bulk move/delete -- a plain Set rather than something
+// tied to render output, so it survives expand/collapse re-renders (only
+// cleared by an explicit Cancel or after a bulk action completes).
+const categoryBulkSelected = new Set();
+
 function categoryTreeRowHtml(c, depth) {
   const children = categoryChildren(c.id);
   const hasChildren = children.length > 0;
   const isExpanded = categoryTreeExpanded.has(c.id);
-  // The built-in Primary category is excluded from drag-and-drop entirely --
-  // it can't be nested under anything (it's the fallback for uncategorized
-  // mail) and can't gain subcategories either (see checkParent server-side).
+  // The built-in Primary category is excluded from drag-and-drop, bulk
+  // selection, and everything else that could move/delete it -- it's the
+  // permanent fallback for uncategorized mail.
   return `
     <div class="cat-tree-row" data-cat-row="${c.id}" ${c.is_builtin ? '' : 'draggable="true"'} style="padding-left:${depth * 1.5}rem;">
+      ${c.is_builtin ? '<span class="cat-bulk-checkbox-spacer"></span>' : `<input type="checkbox" class="cat-bulk-checkbox" data-bulk-select="${c.id}" ${categoryBulkSelected.has(c.id) ? 'checked' : ''} onclick="event.stopPropagation()">`}
       ${hasChildren ? `<button type="button" class="cat-tree-expand-btn ${isExpanded ? 'expanded' : ''}" data-toggle-cat="${c.id}" title="${isExpanded ? 'Collapse' : 'Expand'}">&#9656;</button>` : '<span class="cat-tree-expand-spacer"></span>'}
       <div class="cat-icon" style="background:${c.color};width:1.9rem;height:1.9rem;font-size:${isEmojiIcon(c.icon) ? '1rem' : '0.78rem'};">${categoryGlyph(c)}</div>
       <span class="cat-tree-name">${escapeHtml(c.name)}</span>
@@ -942,6 +950,89 @@ function categoryTreeRowHtml(c, depth) {
       ${c.is_builtin ? '' : `<button class="icon-btn" data-edit-cat="${c.id}" title="Edit">&#9998;</button><button class="icon-btn" data-del-cat="${c.id}" title="Delete">&times;</button>`}
     </div>
     ${hasChildren ? `<div class="cat-tree-children ${isExpanded ? '' : 'hidden'}" data-children-of="${c.id}">${children.map((ch) => categoryTreeRowHtml(ch, depth + 1)).join('')}</div>` : ''}`;
+}
+
+function updateCategoryBulkBar() {
+  const bar = document.getElementById('category-bulk-bar');
+  const count = categoryBulkSelected.size;
+  bar.classList.toggle('hidden', count === 0);
+  document.getElementById('category-bulk-count').textContent = `${count} selected`;
+}
+
+async function runCategoryBulkMove() {
+  const ids = [...categoryBulkSelected];
+  if (!ids.length) return;
+  const excludeIds = new Set(ids);
+  for (const id of ids) for (const d of categoryDescendantIds(id)) excludeIds.add(d);
+
+  const anchor = document.getElementById('category-bulk-move-btn');
+  openCategoryPicker(anchor, {
+    noneLabel: 'Top level',
+    excludeIds,
+    onSelect: async (targetId) => {
+      if (targetId) {
+        const target = catById(targetId);
+        const directRuleCount = state.rules.filter((r) => r.category_id === targetId).length;
+        const directMailCount = target?.total ?? 0;
+        if (directMailCount > 0 || directRuleCount > 0) {
+          const parts = [];
+          if (directMailCount > 0) parts.push(`${directMailCount} message${directMailCount === 1 ? '' : 's'}`);
+          if (directRuleCount > 0) parts.push(`${directRuleCount} rule${directRuleCount === 1 ? '' : 's'}`);
+          const ok = await showConfirm(
+            `"${target.name}" currently has ${parts.join(' and ')} filed directly under it. Moving ${ids.length} categor${ids.length === 1 ? 'y' : 'ies'} under it turns "${target.name}" into a parent category, which can't hold mail itself -- ${parts.join(' and ')} will be uncategorized or lose that category.`,
+            { title: `Move into "${target.name}"?`, confirmText: 'Move', danger: true }
+          );
+          if (!ok) return;
+        }
+      }
+
+      let moved = 0;
+      let failed = 0;
+      for (const id of ids) {
+        try {
+          await api.updateCategory(id, { parentId: targetId });
+          moved++;
+        } catch {
+          failed++;
+        }
+      }
+      if (targetId) {
+        categoryTreeExpanded.add(targetId);
+        saveCategoryTreeExpanded();
+      }
+      categoryBulkSelected.clear();
+      await loadCategories();
+      const msg = failed
+        ? `Moved ${moved} categor${moved === 1 ? 'y' : 'ies'}, ${failed} failed (likely a conflict with another selected category).`
+        : `Moved ${moved} categor${moved === 1 ? 'y' : 'ies'}.`;
+      showBanner(document.getElementById('category-tree-banner'), failed ? 'error' : 'success', msg);
+    },
+  });
+}
+
+async function runCategoryBulkDelete() {
+  const ids = [...categoryBulkSelected];
+  if (!ids.length) return;
+  const ok = await showConfirm(
+    `Mail in them becomes uncategorized, and any of their subcategories that aren't also selected move up a level.`,
+    { title: `Delete ${ids.length} selected categor${ids.length === 1 ? 'y' : 'ies'}?`, confirmText: 'Delete', danger: true }
+  );
+  if (!ok) return;
+
+  let deleted = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      await api.deleteCategory(id);
+      deleted++;
+    } catch {
+      failed++;
+    }
+  }
+  categoryBulkSelected.clear();
+  await loadCategories();
+  const msg = failed ? `Deleted ${deleted}, ${failed} failed.` : `Deleted ${deleted} categor${deleted === 1 ? 'y' : 'ies'}.`;
+  showBanner(document.getElementById('category-tree-banner'), failed ? 'error' : 'success', msg);
 }
 
 // Dragging draggedId onto targetId would nest draggedId under targetId --
@@ -1046,6 +1137,15 @@ function renderCategoryTree() {
       renderCategoryTree();
     };
   });
+  document.querySelectorAll('[data-bulk-select]').forEach((cb) => {
+    cb.onchange = () => {
+      const id = cb.dataset.bulkSelect;
+      if (cb.checked) categoryBulkSelected.add(id);
+      else categoryBulkSelected.delete(id);
+      updateCategoryBulkBar();
+    };
+  });
+  updateCategoryBulkBar();
   document.querySelectorAll('[data-add-sub-cat]').forEach((btn) => {
     btn.onclick = () => openCategoryModal(null, btn.dataset.addSubCat);
   });
@@ -1202,6 +1302,13 @@ async function loadCategories() {
   document.getElementById('add-category-btn').onclick = () => openCategoryModal(null);
   document.getElementById('add-rule-btn').onclick = () => openRuleModal(null);
   document.getElementById('import-filters-btn').onclick = () => openImportFiltersModal();
+  document.getElementById('category-bulk-move-btn').onclick = runCategoryBulkMove;
+  document.getElementById('category-bulk-delete-btn').onclick = runCategoryBulkDelete;
+  document.getElementById('category-bulk-cancel-btn').onclick = () => {
+    categoryBulkSelected.clear();
+    document.querySelectorAll('.cat-bulk-checkbox').forEach((cb) => (cb.checked = false));
+    updateCategoryBulkBar();
+  };
   document.getElementById('reapply-rules-btn').onclick = async (e) => {
     e.target.disabled = true;
     e.target.textContent = 'Reapplying...';
