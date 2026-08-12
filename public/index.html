@@ -152,9 +152,12 @@
               <h1 class="gradient-text">Categories</h1>
               <p>How your mail gets sorted &mdash; front and center, not buried in settings.</p>
             </div>
-            <button class="btn btn-primary" id="add-category-btn">+ New Category</button>
+            <div style="display:flex;gap:0.5rem;">
+              <button class="btn btn-ghost" id="import-filters-btn">Import Gmail filters</button>
+              <button class="btn btn-primary" id="add-category-btn">+ New Category</button>
+            </div>
           </div>
-          <div class="category-grid" id="category-grid"></div>
+          <div id="category-grid"></div>
 
           <hr style="border:0;border-top:1px solid var(--glass-border);margin:1.5rem 0;">
 

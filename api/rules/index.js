@@ -1,6 +1,7 @@
 import { withApi, methodGuard } from '../../lib/http.js';
 import { requireUser } from '../../lib/withAuth.js';
 import { listRules, createRule, updateOrDeleteRule, reapplyRules } from '../../lib/routes/rules.js';
+import { importGmailFilters } from '../../lib/gmailImport.js';
 
 // Single static file, dispatching on ?id= and ?action= in the query string
 // rather than on path segments -- see api/auth/index.js for why.
@@ -10,6 +11,10 @@ export default withApi(async (req, res) => {
 
   if (action === 'reapply') {
     return reapplyRules(user, req, res);
+  }
+
+  if (action === 'import') {
+    return importGmailFilters(user, req, res);
   }
 
   if (id) {

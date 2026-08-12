@@ -57,6 +57,7 @@ export const api = {
   updateRule: (id, payload) => request(`/rules?id=${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteRule: (id) => request(`/rules?id=${id}`, { method: 'DELETE' }),
   reapplyRules: () => request('/rules?action=reapply', { method: 'POST' }),
+  importFilters: (text) => request('/rules?action=import', { method: 'POST', body: JSON.stringify({ text }) }),
 
   // stats
   getStats: () => request('/stats'),

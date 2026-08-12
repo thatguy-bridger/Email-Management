@@ -555,9 +555,7 @@ async function loadCategories() {
     const { rules } = await api.listRules();
     state.rules = rules;
 
-    document.getElementById('category-grid').innerHTML = state.categories
-      .map(
-        (c) => `
+    const categoryCardHtml = (c) => `
       <div class="glass-card category-card">
         <div class="cat-icon" style="background:${c.color}">${initials(c.name)}</div>
         <div style="flex:1;">
@@ -565,9 +563,29 @@ async function loadCategories() {
           <div class="form-hint">${c.total ?? 0} total &middot; ${c.unread_count ?? 0} unread</div>
         </div>
         ${c.is_builtin ? '' : `<button class="icon-btn" data-edit-cat="${c.id}" title="Edit">&#9998;</button><button class="icon-btn" data-del-cat="${c.id}" title="Delete">&times;</button>`}
-      </div>`
-      )
-      .join('');
+      </div>`;
+
+    // Groups mirror imported Gmail label prefixes ("Missionaries/Name")
+    // without a full parent/child model -- just a header over a sub-grid.
+    // Ungrouped categories (including the built-in Primary) render first,
+    // flat, no header.
+    const ungrouped = state.categories.filter((c) => !c.group_name);
+    const grouped = new Map();
+    for (const c of state.categories) {
+      if (!c.group_name) continue;
+      if (!grouped.has(c.group_name)) grouped.set(c.group_name, []);
+      grouped.get(c.group_name).push(c);
+    }
+    let categoryHtml = ungrouped.length ? `<div class="category-grid">${ungrouped.map(categoryCardHtml).join('')}</div>` : '';
+    for (const [groupName, cats] of grouped) {
+      categoryHtml += `
+        <div class="category-group">
+          <div class="category-group-title">${escapeHtml(groupName)}</div>
+          <div class="category-grid">${cats.map(categoryCardHtml).join('')}</div>
+        </div>`;
+    }
+    document.getElementById('category-grid').innerHTML =
+      categoryHtml || '<div class="empty-state">No categories yet.</div>';
     document.querySelectorAll('[data-edit-cat]').forEach((btn) => btn.addEventListener('click', () => openCategoryModal(catById(btn.dataset.editCat))));
     document.querySelectorAll('[data-del-cat]').forEach((btn) =>
       btn.addEventListener('click', async () => {
@@ -579,21 +597,28 @@ async function loadCategories() {
 
     document.getElementById('rule-list').innerHTML = state.rules.length
       ? state.rules
-          .map(
-            (r) => `
+          .map((r) => {
+            const actionBadges = [
+              r.mark_trashed ? '<span class="rule-action-badge trash">Delete</span>' : '',
+              r.mark_seen ? '<span class="rule-action-badge seen">Mark read</span>' : '',
+            ].join('');
+            const categoryLabel = r.category_id
+              ? `<span class="chip-dot" style="background:${r.category_color};display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;margin-right:0.4rem;"></span>${escapeHtml(r.category_group ? `${r.category_group}/${r.category_name}` : r.category_name)}`
+              : '<span class="form-hint">(no label)</span>';
+            return `
       <div class="rule-row">
         <span>${escapeHtml(r.name)}</span>
         <span class="form-hint">${r.field}</span>
         <span class="form-hint">${r.operator.replace('_', ' ')}</span>
         <span class="form-hint">"${escapeHtml(r.value)}"</span>
-        <span><span class="chip-dot" style="background:${r.category_color};display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;margin-right:0.4rem;"></span>${escapeHtml(r.category_name)}</span>
-        <span class="rule-priority-badge">P${r.priority}</span>
+        <span>${categoryLabel}</span>
+        <span class="rule-action-badges">${actionBadges}</span>
         <span style="display:flex;gap:0.3rem;">
           <button class="icon-btn" data-edit-rule="${r.id}" title="Edit">&#9998;</button>
           <button class="icon-btn" data-del-rule="${r.id}" title="Delete">&times;</button>
         </span>
-      </div>`
-          )
+      </div>`;
+          })
           .join('')
       : '<div class="empty-state">No rules yet. Add one to start auto-sorting mail.</div>';
     document.querySelectorAll('[data-edit-rule]').forEach((btn) => btn.addEventListener('click', () => openRuleModal(state.rules.find((r) => r.id === btn.dataset.editRule))));
@@ -612,6 +637,7 @@ async function loadCategories() {
   // these dead for the rest of the session.
   document.getElementById('add-category-btn').onclick = () => openCategoryModal(null);
   document.getElementById('add-rule-btn').onclick = () => openRuleModal(null);
+  document.getElementById('import-filters-btn').onclick = () => openImportFiltersModal();
   document.getElementById('reapply-rules-btn').onclick = async (e) => {
     e.target.disabled = true;
     e.target.textContent = 'Reapplying...';
@@ -633,6 +659,11 @@ function openCategoryModal(category) {
     `
     <h2>${isEdit ? 'Edit category' : 'New category'}</h2>
     <div class="form-field"><label>Name</label><input class="form-input" id="cat-name" value="${escapeHtml(category?.name || '')}"></div>
+    <div class="form-field">
+      <label>Group (optional)</label>
+      <input class="form-input" id="cat-group" value="${escapeHtml(category?.group_name || '')}" placeholder="e.g. Newsletters">
+      <span class="form-hint">Clusters this category under a header on this page, like Gmail's nested labels.</span>
+    </div>
     <div class="form-field"><label>Color</label><input type="color" id="cat-color" value="${category?.color || '#6366f1'}" style="width:4rem;height:2.4rem;border:none;background:none;"></div>
     <div id="cat-modal-error"></div>
     <div class="modal-footer">
@@ -643,11 +674,12 @@ function openCategoryModal(category) {
       overlay.querySelector('#cat-cancel').onclick = closeModal;
       overlay.querySelector('#cat-save').onclick = async () => {
         const name = overlay.querySelector('#cat-name').value.trim();
+        const groupName = overlay.querySelector('#cat-group').value.trim();
         const color = overlay.querySelector('#cat-color').value;
         if (!name) return;
         try {
-          if (isEdit) await api.updateCategory(category.id, { name, color });
-          else await api.createCategory({ name, color });
+          if (isEdit) await api.updateCategory(category.id, { name, color, groupName: groupName || null });
+          else await api.createCategory({ name, color, groupName: groupName || null });
           closeModal();
           loadCategories();
         } catch (err) {
@@ -671,7 +703,21 @@ function openRuleModal(rule) {
       <div class="form-field"><label>Operator</label><select class="form-select" id="rule-operator">${operators.map((o) => `<option value="${o}" ${rule?.operator === o ? 'selected' : ''}>${o.replace('_', ' ')}</option>`).join('')}</select></div>
     </div>
     <div class="form-field"><label>Value</label><input class="form-input" id="rule-value" value="${escapeHtml(rule?.value || '')}" placeholder="e.g. delta.com"></div>
-    <div class="form-field"><label>Category</label><select class="form-select" id="rule-category">${state.categories.map((c) => `<option value="${c.id}" ${rule?.category_id === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}</select></div>
+    <div class="form-field">
+      <label>Category (optional)</label>
+      <select class="form-select" id="rule-category">
+        <option value="">(no label)</option>
+        ${state.categories.map((c) => `<option value="${c.id}" ${rule?.category_id === c.id ? 'selected' : ''}>${escapeHtml(c.group_name ? `${c.group_name}/${c.name}` : c.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-field">
+      <label style="display:flex;align-items:center;gap:0.5rem;font-weight:600;color:var(--text-primary);">
+        <input type="checkbox" id="rule-trash" ${rule?.mark_trashed ? 'checked' : ''}> Delete matching mail automatically
+      </label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-weight:600;color:var(--text-primary);margin-top:0.4rem;">
+        <input type="checkbox" id="rule-seen" ${rule?.mark_seen ? 'checked' : ''}> Mark matching mail as read automatically
+      </label>
+    </div>
     <div class="form-field"><label>Priority (higher wins ties)</label><input class="form-input" type="number" id="rule-priority" value="${rule?.priority ?? 0}"></div>
     <div id="rule-modal-error"></div>
     <div class="modal-footer">
@@ -686,10 +732,16 @@ function openRuleModal(rule) {
           field: overlay.querySelector('#rule-field').value,
           operator: overlay.querySelector('#rule-operator').value,
           value: overlay.querySelector('#rule-value').value.trim(),
-          categoryId: overlay.querySelector('#rule-category').value,
+          categoryId: overlay.querySelector('#rule-category').value || null,
+          markTrashed: overlay.querySelector('#rule-trash').checked,
+          markSeen: overlay.querySelector('#rule-seen').checked,
           priority: parseInt(overlay.querySelector('#rule-priority').value, 10) || 0,
         };
         if (!payload.name || !payload.value) return;
+        if (!payload.categoryId && !payload.markTrashed && !payload.markSeen) {
+          showBanner(overlay.querySelector('#rule-modal-error'), 'error', 'Pick a category, or an automatic action below.');
+          return;
+        }
         try {
           if (isEdit) await api.updateRule(rule.id, payload);
           else await api.createRule(payload);
@@ -697,6 +749,55 @@ function openRuleModal(rule) {
           loadCategories();
         } catch (err) {
           showBanner(overlay.querySelector('#rule-modal-error'), 'error', err.message);
+        }
+      };
+    }
+  );
+}
+
+function openImportFiltersModal() {
+  openModal(
+    `
+    <h2>Import Gmail filters</h2>
+    <p class="form-hint">
+      In Gmail: Settings &rarr; See all settings &rarr; Filters and Blocked Addresses, select all your filters, and
+      copy the whole list (each one shows as "Matches: ..." / "Do this: ..."). Paste it below. Sender-based label
+      filters become categories + rules; "Delete it" and "Mark as read" become automatic actions. Filters with no
+      usable sender/subject criteria, or no actionable instruction, are skipped and listed after import.
+    </p>
+    <div class="form-field"><textarea class="form-input" id="import-text" rows="10" style="min-height:200px;font-family:monospace;font-size:0.78rem;" placeholder="Matches: from:(someone@example.com)&#10;Do this: Apply label &quot;Newsletters/Example&quot;"></textarea></div>
+    <div id="import-modal-status"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="import-cancel">Cancel</button>
+      <button class="btn btn-primary" id="import-run">Import</button>
+    </div>`,
+    (overlay) => {
+      overlay.querySelector('#import-cancel').onclick = closeModal;
+      overlay.querySelector('#import-run').onclick = async (e) => {
+        const text = overlay.querySelector('#import-text').value;
+        const statusEl = overlay.querySelector('#import-modal-status');
+        if (!text.trim()) return;
+        e.target.disabled = true;
+        e.target.innerHTML = '<span class="spinner"></span> Importing...';
+        try {
+          const r = await api.importFilters(text);
+          let msg = `Created ${r.categoriesCreated} categories and ${r.rulesCreated} rules from ${r.entriesFound} filters.`;
+          if (r.duplicateRulesSkipped) {
+            msg += ` Skipped ${r.duplicateRulesSkipped} duplicate rule${r.duplicateRulesSkipped === 1 ? '' : 's'} (already covered by an existing one).`;
+          }
+          if (r.skipped) {
+            msg += ` Skipped ${r.skipped} filter${r.skipped === 1 ? '' : 's'} with no usable sender/subject match or no actionable instruction.`;
+          }
+          showBanner(statusEl, 'success', msg);
+          if (r.skippedDetails?.length) {
+            statusEl.innerHTML += `<div class="form-hint" style="margin-top:0.5rem;max-height:120px;overflow-y:auto;">Skipped: ${r.skippedDetails.map((s) => escapeHtml(s)).join('<br>')}</div>`;
+          }
+          loadCategories();
+        } catch (err) {
+          showBanner(statusEl, 'error', err.message);
+        } finally {
+          e.target.disabled = false;
+          e.target.textContent = 'Import';
         }
       };
     }

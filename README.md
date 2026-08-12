@@ -47,10 +47,26 @@ extending this project, keep using this pattern rather than reintroducing
   action bar (mark read / archive / trash several at once). Opening a
   message that's part of a conversation shows the whole thread stacked
   oldest-first, not just the one message.
-- **Categories** — category cards (color-coded, message counts) and the rule
-  builder that drives them: `field operator value → category`, evaluated in
-  priority order, first match wins. Editing a rule only affects new mail
-  until you hit "Reapply to existing mail."
+- **Categories** — category cards (color-coded, message counts), optionally
+  clustered under a group header (e.g. every individual "Missionaries/Name"
+  category groups under a "Missionaries" heading) — a light, one-level
+  version of Gmail's nested labels, not a full parent/child graph. Below
+  that, the rule builder: `field operator value → category`, evaluated in
+  priority order, first match wins. A rule's category is optional if it
+  also does something automatic — delete on arrival, mark as read on
+  arrival, or both (Gmail's filter actions, minus "star"/"important" which
+  have no equivalent here). Editing a rule only affects new mail until you
+  hit "Reapply to existing mail" (and reapply only ever touches
+  categorization — it never retroactively deletes or marks old mail read).
+  **Import Gmail filters**: paste the plain-text listing from Gmail's
+  Settings → Filters and Blocked Addresses page (select all, copy) and it's
+  parsed into categories + rules automatically — sender/domain lists
+  (`OR`/comma-separated) become one rule per address pointing at the same
+  category, "Delete it"/"Mark as read" become the automatic actions above,
+  and duplicate rules (including near-duplicates already in Gmail's own
+  export) are skipped. Filters with no usable sender/subject signal, or no
+  actionable instruction, are skipped and listed after import so nothing
+  silently vanishes.
 - **Accounts** — connect/manage IMAP accounts, rename/recolor an existing
   one, manual "Sync now," per-account status/error.
 - **Settings** — account (change password, sign out, delete account), theme

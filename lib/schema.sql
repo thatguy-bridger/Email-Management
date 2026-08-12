@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS categories (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
+-- Lightweight nesting (one level) so imported Gmail labels like
+-- "Missionaries/Brady Christensen" can cluster under a "Missionaries"
+-- header in the UI without a full parent/child category graph. NULL means
+-- ungrouped, shown standalone.
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS group_name TEXT;
 
 CREATE TABLE IF NOT EXISTS rules (
   id TEXT PRIMARY KEY,
@@ -61,6 +66,11 @@ CREATE TABLE IF NOT EXISTS rules (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_rules_user ON rules(user_id);
+-- A rule can act on arrival beyond just categorizing -- mirrors Gmail's
+-- "Delete it" / "Mark as read" filter actions. category_id is already
+-- nullable, so a rule can be delete-only or mark-read-only with no label.
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS mark_trashed BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rules ADD COLUMN IF NOT EXISTS mark_seen BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
