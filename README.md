@@ -37,14 +37,19 @@ extending this project, keep using this pattern rather than reintroducing
 
 - **Home** — dashboard: unread/needs-reply/flagged counts, per-category
   breakdown, per-account sync status, recent mail. The stat tiles are
-  clickable and jump straight into a pre-filtered Inbox.
+  clickable and jump straight into a pre-filtered Inbox. The category
+  breakdown starts collapsed behind a one-line "N categories" summary
+  (expand state remembered) instead of listing every one flat — the same
+  reasoning as the Categories page tree.
 - **Inbox** — a single full-width message list (50 messages a page with a
   "Load more" button for older mail), not a list-plus-reading-pane split.
   Clicking a message opens it in a modal instead — thread messages (if it's
   part of a conversation) stack oldest-first inside it, with flag/archive/
   trash actions right there, and closing it (the × button, or click outside)
-  drops you right back on the list. A category rail sits right above the
-  list (always visible, one click to filter), and every message row has a
+  drops you right back on the list. An "All" chip plus a single "Filter by
+  category" dropdown (the same collapsible tree popover used elsewhere) sit
+  above the list — not one chip per category, which stopped being usable
+  past a couple dozen. Every message row has a
   "Sort into…" dropdown — the sorting UI Gmail hides behind Settings ▸
   Filters is the primary surface here instead. An "Unread only" toggle and
   "Mark all as read" sit next to the mailbox tabs. Checkboxes on each row
@@ -223,6 +228,18 @@ switching mailbox/category/search) clears and shows a spinner, since there's
 nothing valid to keep showing yet. The topbar logo doubles as a manual
 refresh button for the current view if you want to force a re-fetch (e.g.
 after mail lands from an account synced outside this browser tab).
+
+## "What's new" popup
+
+Signing in (fresh login or an already-valid session loading the app) checks a
+`CHANGELOG` array in `public/js/app.js` against the highest entry id you've
+already seen (tracked in `localStorage`) and shows a dismissible popup
+listing every entry you haven't — not just the latest one, so nothing gets
+skipped if you haven't opened the app in a while. It's marked seen the
+moment it's shown, not only on an explicit "Got it" click, so however you
+close it, it won't show again until a new entry is added. To ship a new
+one: append `{ id: <next number>, date: '...', items: [...] }` to
+`CHANGELOG`.
 
 ## Security notes
 

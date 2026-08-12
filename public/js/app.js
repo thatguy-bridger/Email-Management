@@ -436,6 +436,11 @@ function showConfirm(message, opts = {}) {
 }
 
 // ===================== HOME =====================
+// Collapsed by default -- a dashboard widget dumping 20+ categories flat
+// was exactly the clutter problem the Categories page tree already solved,
+// so this gets the same "summary first, expand to see the list" treatment.
+const HOME_CATEGORY_BREAKDOWN_KEY = 'mail_home_cat_breakdown_expanded';
+
 async function loadHome() {
   const greeting = document.getElementById('home-greeting');
   const hour = new Date().getHours();
@@ -465,19 +470,37 @@ async function loadHome() {
     unreadBadge.textContent = stats.unread;
     unreadBadge.classList.toggle('hidden', stats.unread === 0);
 
-    document.getElementById('home-category-breakdown').innerHTML =
-      stats.categories.length === 0
-        ? '<div class="empty-state">No categories yet.</div>'
-        : stats.categories
+    {
+      const expanded = localStorage.getItem(HOME_CATEGORY_BREAKDOWN_KEY) === 'true';
+      const totalUnread = stats.categories.reduce((sum, c) => sum + (c.unread || 0), 0);
+      document.getElementById('home-category-breakdown').innerHTML =
+        stats.categories.length === 0
+          ? '<div class="empty-state">No categories yet.</div>'
+          : `
+        <button type="button" class="rule-group-header" id="home-cat-toggle" style="padding-left:0;">
+          <span class="cat-tree-expand-btn ${expanded ? 'expanded' : ''}" style="pointer-events:none;">&#9656;</span>
+          <span style="flex:1;font-weight:700;">${stats.categories.length} categor${stats.categories.length === 1 ? 'y' : 'ies'}</span>
+          <span class="form-hint">${totalUnread > 0 ? `${totalUnread} unread` : ''}</span>
+        </button>
+        <div id="home-cat-list" class="${expanded ? '' : 'hidden'}">
+          ${stats.categories
             .map(
               (c) => `
-        <div class="account-status-row">
-          <span class="color-dot" style="background:${c.color}"></span>
-          <span style="flex:1;">${escapeHtml(c.name)}</span>
-          <span class="form-hint">${c.total} total${c.unread > 0 ? ` &middot; ${c.unread} unread` : ''}</span>
-        </div>`
+          <div class="account-status-row">
+            <span class="color-dot" style="background:${c.color}"></span>
+            <span style="flex:1;">${escapeHtml(c.name)}</span>
+            <span class="form-hint">${c.total} total${c.unread > 0 ? ` &middot; ${c.unread} unread` : ''}</span>
+          </div>`
             )
-            .join('');
+            .join('')}
+        </div>`;
+      document.getElementById('home-cat-toggle')?.addEventListener('click', () => {
+        const list = document.getElementById('home-cat-list');
+        const isHidden = list.classList.toggle('hidden');
+        document.querySelector('#home-cat-toggle .cat-tree-expand-btn').classList.toggle('expanded', !isHidden);
+        localStorage.setItem(HOME_CATEGORY_BREAKDOWN_KEY, String(!isHidden));
+      });
+    }
 
     document.getElementById('home-account-status').innerHTML =
       stats.accounts.length === 0
@@ -547,26 +570,37 @@ async function refreshCategories() {
   return categories;
 }
 
+// A chip per category (as this used to be) turns into 50+ wrapping buttons
+// once a Gmail import happens -- same clutter problem the Categories page
+// tree already solved. "All" stays a one-click chip since it's the common
+// case; everything else lives behind a single dropdown button that opens
+// the same collapsible category tree popover used everywhere else, instead
+// of dumping every category flat into the toolbar.
 function renderCategoryRail() {
   const rail = document.getElementById('inbox-category-rail');
-  const chips = [
-    `<button class="category-chip ${state.inbox.category === null ? 'active' : ''}" data-cat="" style="${state.inbox.category === null ? 'background:var(--accent-grad);' : ''}">All</button>`,
-    ...state.categories.map((c) => {
-      const active = state.inbox.category === c.id;
-      return `<button class="category-chip ${active ? 'active' : ''}" data-cat="${c.id}" style="${active ? `background:${c.color};` : ''}">
-        <span class="chip-dot" style="background:${c.color}"></span>${escapeHtml(c.name)}
-        ${c.unread_count > 0 ? `<span class="chip-count">${c.unread_count}</span>` : ''}
-      </button>`;
-    }),
-  ];
-  rail.innerHTML = chips.join('');
-  rail.querySelectorAll('[data-cat]').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      state.inbox.category = btn.dataset.cat || null;
-      renderCategoryRail();
-      loadMessages();
-    })
-  );
+  const active = state.inbox.category ? catById(state.inbox.category) : null;
+  rail.innerHTML = `
+    <button class="category-chip ${state.inbox.category === null ? 'active' : ''}" id="cat-rail-all" style="${state.inbox.category === null ? 'background:var(--accent-grad);' : ''}">All</button>
+    <button type="button" class="category-chip cat-picker-btn" id="cat-rail-filter-btn" style="${active ? `background:${active.color};color:#fff;border-color:transparent;` : ''}">
+      ${active ? `<span class="chip-dot" style="background:rgba(255,255,255,.6)"></span>${escapeHtml(categoryPath(active.id))}` : 'Filter by category'}
+      ${active && active.unread_count > 0 ? `<span class="chip-count">${active.unread_count}</span>` : ''}
+    </button>`;
+  document.getElementById('cat-rail-all').onclick = () => {
+    state.inbox.category = null;
+    renderCategoryRail();
+    loadMessages();
+  };
+  document.getElementById('cat-rail-filter-btn').onclick = (e) => {
+    openCategoryPicker(e.currentTarget, {
+      selectedId: state.inbox.category,
+      leafOnly: true, // only leaf categories ever hold mail, so a parent is never a useful filter
+      onSelect: (id) => {
+        state.inbox.category = id;
+        renderCategoryRail();
+        loadMessages();
+      },
+    });
+  };
 }
 
 const QUICK_FILTER_LABELS = { unread: 'Unread', needsReply: 'Needs Reply', flagged: 'Flagged' };
@@ -1845,6 +1879,7 @@ function showApp() {
   document.getElementById('auth-gate').classList.add('hidden');
   document.getElementById('app-root').classList.remove('hidden');
   switchView('home');
+  showChangelogIfNeeded();
 }
 
 function initAuthGate() {
@@ -1874,6 +1909,67 @@ function initAuthGate() {
       submitBtn.disabled = false;
     }
   });
+}
+
+// ===================== What's new (changelog) =====================
+// A dismissible summary of recent changes, shown once after the entries
+// are added -- append a new entry (with the next id) whenever shipping a
+// user-facing change. Every entry the user hasn't seen yet (id greater
+// than their last-seen id, tracked in localStorage) is shown together in
+// one popup, not just the newest one, so nothing gets skipped if they
+// haven't opened the app in a while.
+const CHANGELOG = [
+  {
+    id: 1,
+    date: 'August 2026',
+    items: [
+      'Categories: drag one onto another to nest it, mass-select rows to move or delete several at once, and pick a custom emoji icon instead of just an initial.',
+      "Only categories without their own subcategories can hold mail now — nesting one under a category that already has mail directly asks first, since it's becoming purely organizational.",
+      'Sorting rules and the Categories tree are now collapsible groups instead of one long list, so a big Gmail import doesn’t dump 70+ rows on screen at once.',
+      'Opening a message is now a modal instead of a side reading pane, and the Inbox list is full width.',
+      "Unread mail's left-edge indicator now matches its category color instead of always being purple.",
+      "Confirm dialogs (delete, move, etc.) use the app's own styled popup instead of the browser's native one.",
+      'Switching to a page you’ve already visited no longer reloads everything from scratch — content stays up while it refreshes quietly in the background (thin progress bar at the top signals it).',
+      'Modals and dropdowns are much less see-through, especially in dark mode.',
+    ],
+  },
+];
+const CHANGELOG_SEEN_KEY = 'mail_changelog_last_seen_id';
+
+function showChangelogIfNeeded() {
+  const lastSeen = parseInt(localStorage.getItem(CHANGELOG_SEEN_KEY) || '0', 10);
+  const unseen = CHANGELOG.filter((entry) => entry.id > lastSeen);
+  if (!unseen.length) return;
+  // Marked as seen as soon as it's shown (not only on an explicit dismiss
+  // click) -- closing it any way (X, click outside, the button) counts,
+  // matching how every other "what's new" popup behaves.
+  const maxId = Math.max(...CHANGELOG.map((entry) => entry.id));
+  localStorage.setItem(CHANGELOG_SEEN_KEY, String(maxId));
+
+  openModal(
+    `
+    <button type="button" class="modal-close-x" id="changelog-close-x" title="Close">&times;</button>
+    <h2 style="padding-right:1.5rem;">What's new</h2>
+    ${unseen
+      .map(
+        (entry) => `
+      <div style="margin-bottom:1.1rem;">
+        <div class="form-hint" style="margin-bottom:0.4rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(entry.date)}</div>
+        <ul style="margin:0;padding-left:1.15rem;font-size:0.87rem;line-height:1.6;color:var(--text-secondary);">
+          ${entry.items.map((item) => `<li style="margin-bottom:0.3rem;">${escapeHtml(item)}</li>`).join('')}
+        </ul>
+      </div>`
+      )
+      .join('')}
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="changelog-dismiss-btn">Got it</button>
+    </div>`,
+    (overlay) => {
+      overlay.querySelector('#changelog-close-x').onclick = closeModal;
+      overlay.querySelector('#changelog-dismiss-btn').onclick = closeModal;
+    },
+    { wide: true }
+  );
 }
 
 async function boot() {
