@@ -200,6 +200,18 @@ password-based IMAP and works today.
   thread ID — it works across providers but won't exactly match Gmail's own
   thread grouping for Gmail-originated threads.
 
+## Why views don't flash to a spinner every time
+
+Switching to a view you've already loaded this session (e.g. Inbox → Home →
+Inbox with the same filters) keeps showing what was already on screen and
+refreshes it quietly in the background instead of wiping to a spinner and
+re-fetching from scratch — a thin progress bar at the top of the page is the
+only sign a refresh is happening. Only a genuinely new view (first visit, or
+switching mailbox/category/search) clears and shows a spinner, since there's
+nothing valid to keep showing yet. The topbar logo doubles as a manual
+refresh button for the current view if you want to force a re-fetch (e.g.
+after mail lands from an account synced outside this browser tab).
+
 ## Security notes
 
 - IMAP passwords are encrypted (AES-256-GCM) before being stored; the key

@@ -26,6 +26,11 @@ const state = {
     hasMore: false,
     filterFlag: null, // null | 'unread' | 'needsReply' | 'flagged'
     selected: new Set(),
+    // Fingerprint of the mailbox/category/search/filter combo behind the
+    // currently-rendered `messages` -- lets loadMessages() tell "revisiting
+    // the same view" apart from "the filters actually changed", so it only
+    // wipes the list to a spinner in the latter case.
+    lastParamsKey: null,
   },
 };
 
@@ -84,6 +89,49 @@ function switchView(view) {
 function initNav() {
   document.querySelectorAll('.nav-link').forEach((btn) => btn.addEventListener('click', () => switchView(btn.dataset.view)));
   document.querySelectorAll('[data-goto]').forEach((btn) => btn.addEventListener('click', () => switchView(btn.dataset.goto)));
+}
+
+// ===================== Background refresh indicator =====================
+// A thin top-of-viewport progress bar for data refreshes that happen behind
+// already-visible content (see the load* functions below, which keep
+// showing cached data instead of wiping to a spinner every time a view is
+// revisited). Counter-based so overlapping refreshes (e.g. sorting a
+// message while the inbox itself is mid-refresh) don't hide the bar the
+// instant the first one finishes while another is still in flight.
+let activeFetchCount = 0;
+function showProgress() {
+  activeFetchCount++;
+  const bar = document.getElementById('top-progress-bar');
+  bar.classList.remove('done');
+  void bar.offsetWidth; // restart the width transition if it was already mid-animation
+  bar.classList.add('active');
+}
+function hideProgress() {
+  activeFetchCount = Math.max(0, activeFetchCount - 1);
+  if (activeFetchCount > 0) return;
+  const bar = document.getElementById('top-progress-bar');
+  bar.classList.remove('active');
+  bar.classList.add('done');
+  setTimeout(() => bar.classList.remove('done'), 500);
+}
+
+// The topbar logo doubles as a manual refresh button (the "make the app
+// icon the refresh button" request) -- re-runs whichever view is currently
+// active, reusing the same load* functions the nav already calls, so it's
+// a real re-fetch rather than a fake spinner.
+function initRefreshButton() {
+  const btn = document.getElementById('app-refresh-btn');
+  btn.onclick = async () => {
+    btn.classList.add('refreshing');
+    try {
+      if (state.view === 'home') await loadHome();
+      else if (state.view === 'inbox') await loadInbox();
+      else if (state.view === 'categories') await loadCategories();
+      else if (state.view === 'accounts') await loadAccounts();
+    } finally {
+      btn.classList.remove('refreshing');
+    }
+  };
 }
 
 // ===================== Helpers =====================
@@ -393,6 +441,7 @@ async function loadHome() {
 
   const bannerContainer = document.getElementById('home-banner-container');
   bannerContainer.innerHTML = '';
+  showProgress();
   try {
     const [stats] = await Promise.all([api.getStats(), refreshCategories()]);
 
@@ -468,6 +517,8 @@ async function loadHome() {
     );
   } catch (err) {
     showBanner(bannerContainer, 'error', err.message);
+  } finally {
+    hideProgress();
   }
 
   document.getElementById('home-sync-all-btn').onclick = async (e) => {
@@ -556,6 +607,7 @@ async function runBulkAction(payload) {
 }
 
 async function loadInbox() {
+  showProgress();
   try {
     await refreshCategories();
     if (!state.accounts.length) await refreshAccounts();
@@ -563,6 +615,8 @@ async function loadInbox() {
     await loadMessages();
   } catch (err) {
     document.getElementById('inbox-message-list').innerHTML = `<div class="banner error">${escapeHtml(err.message)}</div>`;
+  } finally {
+    hideProgress();
   }
 
   // Wired unconditionally (a failed initial fetch above shouldn't leave the
@@ -686,12 +740,29 @@ function wireMessageRows(container) {
 // only by the "Load more" button.
 async function loadMessages(reset = true) {
   const list = document.getElementById('inbox-message-list');
+  // Identifies the mailbox/category/search/filter combo, deliberately
+  // without offset -- pagination shouldn't affect whether this counts as
+  // "the same view" for caching purposes below.
+  const viewKey = JSON.stringify({
+    mailbox: state.inbox.mailbox,
+    category: state.inbox.category || null,
+    q: state.inbox.q || '',
+    filterFlag: state.inbox.filterFlag || null,
+  });
+
   if (reset) {
+    // Revisiting the exact same mailbox/category/search/filter combo that's
+    // already on screen -- keep showing it and refresh quietly instead of
+    // wiping to a spinner, which is what made switching back to Inbox feel
+    // like a full reload every time even though nothing had changed.
+    const isSameView = viewKey === state.inbox.lastParamsKey && state.inbox.messages.length > 0;
     state.inbox.offset = 0;
-    state.inbox.messages = [];
-    state.inbox.selected.clear();
-    updateBulkBar();
-    list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+    if (!isSameView) {
+      state.inbox.messages = [];
+      state.inbox.selected.clear();
+      updateBulkBar();
+      list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+    }
   }
   const params = { mailbox: state.inbox.mailbox, limit: String(MESSAGES_PAGE_SIZE), offset: String(state.inbox.offset) };
   if (state.inbox.category) params.category = state.inbox.category;
@@ -699,11 +770,14 @@ async function loadMessages(reset = true) {
   if (state.inbox.filterFlag === 'unread') params.unread = 'true';
   if (state.inbox.filterFlag === 'needsReply') params.needsReply = 'true';
   if (state.inbox.filterFlag === 'flagged') params.flagged = 'true';
+
+  showProgress();
   try {
     const { messages } = await api.listMessages(params);
     state.inbox.hasMore = messages.length === MESSAGES_PAGE_SIZE;
     state.inbox.offset += messages.length;
     state.inbox.messages = reset ? messages : [...state.inbox.messages, ...messages];
+    if (reset) state.inbox.lastParamsKey = viewKey;
 
     if (!state.inbox.messages.length) {
       list.innerHTML = '<div class="empty-state">Nothing here.</div>';
@@ -718,6 +792,8 @@ async function loadMessages(reset = true) {
     wireMessageRows(list);
   } catch (err) {
     list.innerHTML = `<div class="banner error">${escapeHtml(err.message)}</div>`;
+  } finally {
+    hideProgress();
   }
 }
 
@@ -976,6 +1052,7 @@ function renderCategoryTree() {
 }
 
 async function loadCategories() {
+  showProgress();
   try {
     await refreshCategories();
     const { rules } = await api.listRules();
@@ -1020,6 +1097,8 @@ async function loadCategories() {
     );
   } catch (err) {
     document.getElementById('category-grid').innerHTML = `<div class="banner error">${escapeHtml(err.message)}</div>`;
+  } finally {
+    hideProgress();
   }
 
   // Wired unconditionally so a failed initial fetch above doesn't leave
@@ -1293,7 +1372,12 @@ async function refreshAccounts() {
 
 async function loadAccounts() {
   const list = document.getElementById('accounts-list');
-  list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+  // Only wipe to a spinner on a genuinely first load -- if we already have
+  // accounts rendered from a previous visit, leave them on screen and
+  // refresh quietly (the top progress bar covers the "this is updating"
+  // signal instead of blanking the page every time this view is revisited).
+  if (!state.accounts.length) list.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+  showProgress();
   try {
     await refreshAccounts();
     list.innerHTML = state.accounts.length
@@ -1346,6 +1430,8 @@ async function loadAccounts() {
     );
   } catch (err) {
     list.innerHTML = `<div class="banner error">${escapeHtml(err.message)}</div>`;
+  } finally {
+    hideProgress();
   }
 
   document.getElementById('add-account-btn').onclick = openAccountModal;
@@ -1592,6 +1678,7 @@ async function boot() {
   initPalette();
   initNav();
   initAuthGate();
+  initRefreshButton();
 
   // Fires on any 401 from any API call. A no-op during boot's own /auth/me
   // check and during login/signup failures (state.user is still null at

@@ -93,8 +93,27 @@ button { font-family: inherit; }
   flex-shrink: 0; width: 2.75rem; height: 2.75rem; border: none; border-radius: 0.9rem;
   background: var(--accent-grad); display: flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 800; font-size: 1.1rem; box-shadow: 0 6px 18px var(--glow-accent);
-  cursor: default;
+  cursor: default; font-family: inherit;
 }
+/* The app-root logo doubles as a manual refresh button (click to force-reload
+   the current view) -- the auth-gate one stays non-interactive via the
+   .auth-card override below, since there's nothing to refresh there yet. */
+#app-refresh-btn { cursor: pointer; transition: transform 0.15s ease; }
+#app-refresh-btn:hover { transform: scale(1.06); }
+#app-refresh-btn:active { transform: scale(0.94); }
+#app-refresh-btn.refreshing { animation: logo-pulse 0.9s ease-in-out infinite; cursor: wait; }
+@keyframes logo-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* Thin top-of-viewport progress bar shown during background data refreshes
+   -- signals "this view is updating" without wiping the page to a spinner
+   and losing whatever was already on screen. */
+#top-progress-bar {
+  position: fixed; top: 0; left: 0; height: 3px; width: 0%; background: var(--accent-grad);
+  z-index: 9999; opacity: 0; pointer-events: none;
+  transition: width 0.4s var(--ease-out), opacity 0.2s ease;
+}
+#top-progress-bar.active { opacity: 1; width: 75%; }
+#top-progress-bar.done { width: 100%; opacity: 0; transition: width 0.25s var(--ease-out), opacity 0.4s ease 0.15s; }
 .topbar-nav { display: flex; align-items: center; gap: 0.35rem; flex: 1; overflow-x: auto; scrollbar-width: none; }
 .topbar-nav::-webkit-scrollbar { display: none; }
 .nav-link {
