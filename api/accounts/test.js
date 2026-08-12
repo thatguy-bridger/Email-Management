@@ -1,10 +1,13 @@
 import { testConnection, PROVIDER_PRESETS } from '../../lib/imapSync.js';
 import { encrypt } from '../../lib/crypto.js';
-import { withApi, methodGuard, HttpError } from '../../lib/http.js';
+import { methodGuard, HttpError } from '../../lib/http.js';
+import { withAuth } from '../../lib/withAuth.js';
 
 // Lets the "Add Account" form verify credentials before the account (and
-// its encrypted password) is ever written to the database.
-export default withApi(async (req, res) => {
+// its encrypted password) is ever written to the database. Gated behind
+// withAuth purely to stop random unauthenticated probing of this endpoint
+// -- it doesn't touch any row owned by req.user.
+export default withAuth(async (req, res) => {
   if (!methodGuard(req, res, ['POST'])) return;
   const body = req.body || {};
   let { imapHost, imapPort, imapSecure, provider, username, password } = body;

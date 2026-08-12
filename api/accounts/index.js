@@ -1,7 +1,8 @@
 import { query } from '../../lib/db.js';
 import { encrypt } from '../../lib/crypto.js';
 import { testConnection, PROVIDER_PRESETS } from '../../lib/imapSync.js';
-import { withApi, methodGuard, HttpError } from '../../lib/http.js';
+import { withAuth } from '../../lib/withAuth.js';
+import { methodGuard, HttpError } from '../../lib/http.js';
 import { newId } from '../../lib/seed.js';
 
 const PUBLIC_COLUMNS = `
@@ -10,7 +11,10 @@ const PUBLIC_COLUMNS = `
 `;
 
 async function listAccounts(req, res) {
-  const { rows } = await query(`SELECT ${PUBLIC_COLUMNS} FROM accounts ORDER BY created_at ASC`);
+  const { rows } = await query(
+    `SELECT ${PUBLIC_COLUMNS} FROM accounts WHERE user_id = $1 ORDER BY created_at ASC`,
+    [req.user.id]
+  );
   res.status(200).json({ accounts: rows, providers: PROVIDER_PRESETS });
 }
 
@@ -48,11 +52,12 @@ async function createAccount(req, res) {
   const id = newId('acct');
   const { rows } = await query(
     `INSERT INTO accounts
-      (id, email, display_name, provider, imap_host, imap_port, imap_secure, username, encrypted_password, color)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      (id, user_id, email, display_name, provider, imap_host, imap_port, imap_secure, username, encrypted_password, color)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING ${PUBLIC_COLUMNS}`,
     [
       id,
+      req.user.id,
       email,
       displayName || email,
       provider || 'custom',
@@ -67,7 +72,7 @@ async function createAccount(req, res) {
   res.status(201).json({ account: rows[0] });
 }
 
-export default withApi(async (req, res) => {
+export default withAuth(async (req, res) => {
   if (!methodGuard(req, res, ['GET', 'POST'])) return;
   if (req.method === 'GET') return listAccounts(req, res);
   return createAccount(req, res);

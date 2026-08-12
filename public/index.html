@@ -13,6 +13,35 @@
   <div class="bg-blob bg-blob-2" aria-hidden="true"></div>
   <div class="bg-blob bg-blob-3" aria-hidden="true"></div>
 
+  <div id="auth-gate" class="auth-gate hidden">
+    <div class="glass-card auth-card">
+      <div class="topbar-logo" style="margin-bottom:1rem;">M</div>
+      <h1 class="gradient-text" style="font-size:1.7rem;">Mail</h1>
+      <p class="form-hint" id="auth-subtitle" style="margin-bottom:1rem;">Sign in to your inbox.</p>
+      <div id="auth-error"></div>
+      <form id="auth-form">
+        <div class="form-field hidden" id="auth-name-field">
+          <label>Name</label>
+          <input class="form-input" id="auth-name" autocomplete="name">
+        </div>
+        <div class="form-field">
+          <label>Email</label>
+          <input class="form-input" id="auth-email" type="email" autocomplete="email" required>
+        </div>
+        <div class="form-field">
+          <label>Password</label>
+          <input class="form-input" id="auth-password" type="password" autocomplete="current-password" required>
+          <span class="form-hint" id="auth-password-hint"></span>
+        </div>
+        <button type="submit" class="btn btn-primary" id="auth-submit" style="width:100%;justify-content:center;">Sign in</button>
+      </form>
+      <p class="form-hint" style="text-align:center;margin-top:0.9rem;">
+        <a href="#" id="auth-toggle-mode">Need an account? Sign up</a>
+      </p>
+    </div>
+  </div>
+
+  <div id="app-root" class="hidden">
   <header class="app-topbar">
     <div class="topbar-logo" title="Mail">M</div>
     <nav class="topbar-nav" id="topbar-nav">
@@ -161,6 +190,10 @@
             </div>
           </div>
           <div class="glass-card" style="margin-bottom:1rem;">
+            <div class="panel-title">Account</div>
+            <div id="settings-account-info"></div>
+          </div>
+          <div class="glass-card" style="margin-bottom:1rem;">
             <div class="panel-title">Theme</div>
             <div class="theme-toggle-row">
               <button class="btn" data-theme-choice="light">Light</button>
@@ -185,6 +218,7 @@
       </section>
 
     </main>
+  </div>
   </div>
 
   <div id="modal-root"></div>

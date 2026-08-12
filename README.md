@@ -23,7 +23,20 @@ Postgres, and periodic sync runs on Vercel Cron.
   until you hit "Reapply to existing mail."
 - **Accounts** — connect/manage IMAP accounts, manual "Sync now," per-account
   status/error.
-- **Settings** — theme (light/dark/system) and accent palette.
+- **Settings** — account (sign out), theme (light/dark/system), accent
+  palette.
+
+## Accounts and sign-in
+
+This is a real multi-user app, not a single shared inbox: anyone can create
+an account (email + password) at the sign-in screen, and every mail account,
+category, and rule they add is scoped to them — one person's data is never
+visible to another. Sessions are an HttpOnly signed cookie (30-day expiry),
+passwords are hashed with scrypt (Node's built-in, salted, no plaintext ever
+stored). There's no invite/approval step — whoever reaches the sign-up form
+can create a login — so if you don't want that, put the deployment behind
+Vercel's [Deployment Protection](https://vercel.com/docs/deployment-protection)
+as well.
 
 ## Why Postgres instead of SQLite
 
@@ -48,20 +61,42 @@ Postgres instead.
    Set the result as `ENCRYPTION_KEY` in the Vercel project's environment
    variables.
 
-3. **(Optional) Cron protection.** Set `CRON_SECRET` to a random string in
+3. **Auth secret.** Session cookies (sign-in state) are signed with a second,
+   separate key — don't reuse `ENCRYPTION_KEY` for this:
+   ```
+   openssl rand -hex 32
+   ```
+   Set the result as `AUTH_SECRET`.
+
+4. **(Optional) Cron protection.** Set `CRON_SECRET` to a random string in
    the same place. Vercel automatically sends it as a bearer token when it
    invokes `/api/cron/sync`, so anyone else hitting that URL gets rejected.
 
-4. **Deploy.**
+5. **Deploy.**
    ```
    npm install
    npx vercel deploy
    ```
    or connect the GitHub repo in the Vercel dashboard for automatic deploys.
 
-5. **Local dev.** `vercel dev` runs the functions and static site together;
+6. **Local dev.** `vercel dev` runs the functions and static site together;
    point `DATABASE_URL` at a local or hosted Postgres (a free
    [Neon](https://neon.tech) database works well for this).
+
+## Custom domain (mail.bridgerjones.com)
+
+1. In the Vercel project → **Settings → Domains**, add `mail.bridgerjones.com`.
+2. Vercel shows you a DNS record to create — for a subdomain like this it's
+   almost always a **CNAME** record: `mail` → `cname.vercel-dns.com`. (If it
+   asks for an A record instead, use the IP it shows you.)
+3. Go to wherever `bridgerjones.com`'s DNS is managed (your registrar, or
+   Cloudflare/etc. if you've delegated DNS there) and add that record.
+4. Back in Vercel, wait for the domain to show **Valid Configuration** — DNS
+   propagation is usually minutes, occasionally longer. Vercel issues the
+   TLS certificate automatically once it verifies.
+
+This is a one-time action you have to take in your DNS provider's dashboard
+— I don't have access to that account to do it for you.
 
 ## Connecting an account
 
@@ -105,12 +140,16 @@ password-based IMAP and works today.
 
 - IMAP passwords are encrypted (AES-256-GCM) before being stored; the key
   never touches the database.
+- Account passwords are hashed with scrypt + a random salt, never stored in
+  plaintext or logged.
+- Every API route (except sign-up/sign-in themselves) requires a valid
+  session and scopes all queries to `req.user.id` — one user's accounts,
+  mail, categories, and rules are not reachable by another user's session,
+  even by guessing IDs (verified: cross-user reads/writes return 404).
 - HTML email bodies are rendered with scripts, styles, iframes, and inline
-  event handlers stripped, and remote images blocked — this is a
-  single-user personal tool, not a hardened multi-tenant mail client, so
-  treat it accordingly if you expose it beyond yourself.
-- There's no login/auth layer on the API routes in this version — anyone
-  who can reach your deployment URL can reach your mail. If you deploy this
-  somewhere reachable by more than just you, put it behind Vercel's
-  [password protection](https://vercel.com/docs/deployment-protection) (or
-  add real auth) before connecting a real account.
+  event handlers stripped, and remote images blocked.
+- This still isn't a hardened, audited multi-tenant mail client — it's a
+  personal project with real auth, not a SOC2 product. There's no
+  email-verification step on sign-up and no rate-limiting on login attempts
+  in this version. If that matters for your deployment, add it before
+  relying on this for anything sensitive.

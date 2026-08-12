@@ -2,8 +2,17 @@
 -- relying on a Postgres UUID default, so this works on any Postgres host
 -- (Vercel/Neon, Supabase, plain RDS) without needing the pgcrypto extension.
 
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  display_name TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
   display_name TEXT,
   provider TEXT NOT NULL,
@@ -19,9 +28,11 @@ CREATE TABLE IF NOT EXISTS accounts (
   sync_error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
 
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   color TEXT NOT NULL DEFAULT '#6366f1',
   icon TEXT NOT NULL DEFAULT 'inbox',
@@ -29,9 +40,11 @@ CREATE TABLE IF NOT EXISTS categories (
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
 
 CREATE TABLE IF NOT EXISTS rules (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   field TEXT NOT NULL,
   operator TEXT NOT NULL,
@@ -41,9 +54,11 @@ CREATE TABLE IF NOT EXISTS rules (
   enabled BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_rules_user ON rules(user_id);
 
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   uid INTEGER NOT NULL,
   mailbox TEXT NOT NULL DEFAULT 'INBOX',
@@ -70,6 +85,7 @@ CREATE TABLE IF NOT EXISTS messages (
   UNIQUE(account_id, uid, mailbox)
 );
 
+CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_account ON messages(account_id);
 CREATE INDEX IF NOT EXISTS idx_messages_category ON messages(category_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);

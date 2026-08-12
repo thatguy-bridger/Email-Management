@@ -11,6 +11,7 @@ const PALETTES = [
 
 const state = {
   view: 'home',
+  user: null,
   categories: [],
   accounts: [],
   providers: {},
@@ -67,6 +68,7 @@ function switchView(view) {
   if (view === 'inbox') loadInbox();
   if (view === 'categories') loadCategories();
   if (view === 'accounts') loadAccounts();
+  if (view === 'settings') renderSettingsAccount();
 }
 function initNav() {
   document.querySelectorAll('.nav-link').forEach((btn) => btn.addEventListener('click', () => switchView(btn.dataset.view)));
@@ -683,8 +685,89 @@ function openAccountModal() {
   );
 }
 
-// ===================== Boot =====================
-initTheme();
-initPalette();
-initNav();
-switchView('home');
+// ===================== Settings: account =====================
+function renderSettingsAccount() {
+  const el = document.getElementById('settings-account-info');
+  if (!state.user) return;
+  el.innerHTML = `
+    <div class="account-status-row">
+      <span style="flex:1;">${escapeHtml(state.user.display_name || state.user.email)}</span>
+      <span class="form-hint">${escapeHtml(state.user.email)}</span>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="sign-out-btn" style="margin-top:0.75rem;">Sign out</button>
+  `;
+  document.getElementById('sign-out-btn').onclick = async () => {
+    await api.logout().catch(() => {});
+    location.reload();
+  };
+}
+
+// ===================== Auth gate =====================
+let authMode = 'login';
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isSignup = mode === 'signup';
+  document.getElementById('auth-subtitle').textContent = isSignup ? 'Create your account.' : 'Sign in to your inbox.';
+  document.getElementById('auth-name-field').classList.toggle('hidden', !isSignup);
+  document.getElementById('auth-password-hint').textContent = isSignup ? 'At least 8 characters.' : '';
+  document.getElementById('auth-submit').textContent = isSignup ? 'Create account' : 'Sign in';
+  document.getElementById('auth-toggle-mode').textContent = isSignup ? 'Already have an account? Sign in' : 'Need an account? Sign up';
+  document.getElementById('auth-error').innerHTML = '';
+}
+
+function showAuthGate() {
+  document.getElementById('auth-gate').classList.remove('hidden');
+  document.getElementById('app-root').classList.add('hidden');
+}
+
+function showApp() {
+  document.getElementById('auth-gate').classList.add('hidden');
+  document.getElementById('app-root').classList.remove('hidden');
+  switchView('home');
+}
+
+function initAuthGate() {
+  setAuthMode('login');
+  document.getElementById('auth-toggle-mode').addEventListener('click', (e) => {
+    e.preventDefault();
+    setAuthMode(authMode === 'login' ? 'signup' : 'login');
+  });
+  document.getElementById('auth-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('auth-error');
+    errorEl.innerHTML = '';
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const submitBtn = document.getElementById('auth-submit');
+    submitBtn.disabled = true;
+    try {
+      const { user } =
+        authMode === 'signup'
+          ? await api.signup({ email, password, displayName: document.getElementById('auth-name').value.trim() })
+          : await api.login({ email, password });
+      state.user = user;
+      showApp();
+    } catch (err) {
+      showBanner(errorEl, 'error', err.message);
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+}
+
+async function boot() {
+  initTheme();
+  initPalette();
+  initNav();
+  initAuthGate();
+  try {
+    const { user } = await api.me();
+    state.user = user;
+    showApp();
+  } catch {
+    showAuthGate();
+  }
+}
+
+boot();

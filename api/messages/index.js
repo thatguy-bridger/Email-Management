@@ -1,5 +1,6 @@
 import { query } from '../../lib/db.js';
-import { withApi, methodGuard } from '../../lib/http.js';
+import { withAuth } from '../../lib/withAuth.js';
+import { methodGuard } from '../../lib/http.js';
 
 const LIST_COLUMNS = `
   id, account_id, thread_id, from_name, from_email, to_json, subject, snippet,
@@ -7,7 +8,7 @@ const LIST_COLUMNS = `
   category_locked, needs_reply
 `;
 
-export default withApi(async (req, res) => {
+export default withAuth(async (req, res) => {
   if (!methodGuard(req, res, ['GET'])) return;
 
   const {
@@ -23,8 +24,8 @@ export default withApi(async (req, res) => {
     offset = '0',
   } = req.query;
 
-  const where = [];
-  const params = [];
+  const where = ['user_id = $1'];
+  const params = [req.user.id];
 
   if (threadId) {
     where.push(`thread_id = $${params.push(threadId)}`);
@@ -56,7 +57,7 @@ export default withApi(async (req, res) => {
 
   const sql = `
     SELECT ${LIST_COLUMNS} FROM messages
-    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    WHERE ${where.join(' AND ')}
     ORDER BY date DESC
     LIMIT $${params.length - 1} OFFSET $${params.length}
   `;

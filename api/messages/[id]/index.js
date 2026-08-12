@@ -1,12 +1,13 @@
 import { query } from '../../../lib/db.js';
-import { withApi, methodGuard, HttpError } from '../../../lib/http.js';
+import { withAuth } from '../../../lib/withAuth.js';
+import { methodGuard, HttpError } from '../../../lib/http.js';
 
-export default withApi(async (req, res) => {
+export default withAuth(async (req, res) => {
   if (!methodGuard(req, res, ['GET', 'PATCH'])) return;
   const { id } = req.query;
 
   if (req.method === 'GET') {
-    const { rows } = await query('SELECT * FROM messages WHERE id = $1', [id]);
+    const { rows } = await query('SELECT * FROM messages WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     if (!rows.length) throw new HttpError(404, 'Message not found');
     if (!rows[0].seen) {
       await query('UPDATE messages SET seen = true WHERE id = $1', [id]);
@@ -16,8 +17,17 @@ export default withApi(async (req, res) => {
   }
 
   const body = req.body || {};
+
+  if (body.categoryId !== undefined && body.categoryId !== null) {
+    const { rows: catCheck } = await query('SELECT id FROM categories WHERE id = $1 AND user_id = $2', [
+      body.categoryId,
+      req.user.id,
+    ]);
+    if (!catCheck.length) throw new HttpError(400, 'Invalid category');
+  }
+
   const fields = [];
-  const params = [id];
+  const params = [id, req.user.id];
   const set = (col, val) => {
     params.push(val);
     fields.push(`${col} = $${params.length}`);
@@ -36,7 +46,7 @@ export default withApi(async (req, res) => {
   if (!fields.length) throw new HttpError(400, 'No recognized fields to update');
 
   const { rows } = await query(
-    `UPDATE messages SET ${fields.join(', ')} WHERE id = $1 RETURNING *`,
+    `UPDATE messages SET ${fields.join(', ')} WHERE id = $1 AND user_id = $2 RETURNING *`,
     params
   );
   if (!rows.length) throw new HttpError(404, 'Message not found');

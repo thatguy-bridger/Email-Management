@@ -12,6 +12,12 @@ async function request(path, opts = {}) {
 }
 
 export const api = {
+  // auth
+  me: () => request('/auth/me'),
+  signup: (payload) => request('/auth/signup', { method: 'POST', body: JSON.stringify(payload) }),
+  login: (payload) => request('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+
   // accounts
   listAccounts: () => request('/accounts'),
   testAccount: (payload) => request('/accounts/test', { method: 'POST', body: JSON.stringify(payload) }),
