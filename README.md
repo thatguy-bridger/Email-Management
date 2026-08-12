@@ -197,12 +197,39 @@ password-based IMAP and works today.
 
 ## How sync works
 
+- Each account syncs from the broadest mailbox its provider exposes: Gmail's
+  "All Mail" (every message, archived included) if the server reports it via
+  the IMAP SPECIAL-USE extension, else a real "Archive" folder if one exists,
+  else falls back to INBOX. Whether a message counts as inbox vs. archived
+  locally comes from Gmail's `\Inbox` label (via the `X-GM-EXT-1` extension)
+  when syncing from All Mail, from folder membership when syncing from a
+  dedicated Archive folder, or is always "inbox" when there's no special-use
+  folder at all.
 - Each account tracks the highest IMAP UID it has already fetched
-  (`last_uid`). A sync fetches only messages newer than that — bounded and
-  fast, which matters because it runs inside a serverless function with a
-  hard time limit (`vercel.json` sets 60s for the sync routes).
-- A brand-new account has no watermark yet, so its first sync backfills the
-  most recent 50 messages instead of the entire mailbox.
+  (`last_uid`), scoped to whichever mailbox it's currently syncing from
+  (`sync_mailbox`) — IMAP UIDs are only meaningful within a single mailbox,
+  so switching sync source (e.g. the first time an All Mail folder becomes
+  available) resets the watermark instead of comparing UIDs from two
+  different numbering spaces. New mail past that watermark is always fetched
+  in full on every sync — bounded and fast, which matters because sync runs
+  inside a serverless function with a hard time limit (`vercel.json` sets 60s
+  for the sync routes).
+- A brand-new account has no watermark yet, so its first sync immediately
+  fetches the most recent 50 messages, then starts backfilling everything
+  older than that in the background.
+- **Backfill:** older mail (potentially thousands of messages) can't fit in
+  one 60s sync call, so it's pulled in bounded batches of 150 messages,
+  walking backward from the initial watermark toward the oldest message —
+  each sync call (cron or manual) advances one batch further and persists
+  how far it's gotten (`backfill_before_uid`/`backfill_complete`), so it
+  resumes correctly across calls instead of restarting. While an account is
+  still catching up, the Accounts page shows a "Backfilling…" badge and
+  automatically fires off additional sync calls a couple seconds apart (only
+  while that page is open) instead of making you click "Sync now" repeatedly
+  — cron alone would otherwise take one batch per day.
+- Messages are deduplicated on `(account_id, uid, mailbox)` for straight
+  re-syncs, and additionally on `(account_id, message_id)` to catch the same
+  email arriving under a different UID when the sync source mailbox changes.
 - **Automatic:** `vercel.json` schedules `/api/cron/sync` once a day (13:00
   UTC) to sync every connected account. That's not a stylistic choice —
   Vercel's **Hobby plan caps Cron Jobs at once per day**; anything more

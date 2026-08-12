@@ -1973,6 +1973,14 @@ const CHANGELOG = [
       'Modals and dropdowns are much less see-through, especially in dark mode.',
     ],
   },
+  {
+    id: 2,
+    date: 'August 2026',
+    items: [
+      "Gmail accounts now sync your whole archive, not just the inbox — mail you've archived years ago becomes searchable and sortable into categories too.",
+      'Since that can be thousands of messages, older mail backfills gradually in the background — the Accounts page shows "Backfilling…" while it catches up.',
+    ],
+  },
 ];
 const CHANGELOG_SEEN_KEY = 'mail_changelog_last_seen_id';
 
