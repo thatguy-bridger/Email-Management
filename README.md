@@ -218,15 +218,26 @@ password-based IMAP and works today.
   fetches the most recent 50 messages, then starts backfilling everything
   older than that in the background.
 - **Backfill:** older mail (potentially thousands of messages) can't fit in
-  one 60s sync call, so it's pulled in bounded batches of 150 messages,
-  walking backward from the initial watermark toward the oldest message —
-  each sync call (cron or manual) advances one batch further and persists
-  how far it's gotten (`backfill_before_uid`/`backfill_complete`), so it
-  resumes correctly across calls instead of restarting. While an account is
-  still catching up, the Accounts page shows a "Backfilling…" badge and
-  automatically fires off additional sync calls a couple seconds apart (only
-  while that page is open) instead of making you click "Sync now" repeatedly
-  — cron alone would otherwise take one batch per day.
+  one 60s sync call, so it's pulled in 150-message chunks walking backward
+  from the initial watermark toward the oldest message — but rather than
+  stopping after one chunk, a sync call keeps pulling further-back chunks
+  until it's spent a ~30s time budget (leaving margin under the 60s hard
+  limit), so a fast connection with modestly-sized mail gets through many
+  chunks per call instead of just one. Each call persists how far it's
+  gotten (`backfill_before_uid`/`backfill_complete`), so it resumes
+  correctly across calls instead of restarting, and never advances past a
+  chunk it didn't fully finish. While an account is still catching up, the
+  Accounts page shows a "Backfilling…" badge; a chain of sync calls a
+  fraction of a second apart runs automatically in the background for as
+  long as you're signed in — not only while the Accounts page happens to be
+  open — instead of making you click "Sync now" repeatedly. (Cron alone
+  would otherwise only advance backfill once a day on the Hobby plan; the
+  in-app chain is what actually gets a large archive fully synced in a
+  reasonable time.)
+- Messages are inserted in batches (multiple rows per DB round trip, not one
+  round trip per message) — with thousands of messages fetched in a single
+  backfill call, that was the main remaining bottleneck once fetching itself
+  sped up.
 - Messages are deduplicated on `(account_id, uid, mailbox)` for straight
   re-syncs, and additionally on `(account_id, message_id)` to catch the same
   email arriving under a different UID when the sync source mailbox changes.

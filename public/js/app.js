@@ -1613,25 +1613,48 @@ async function refreshAccounts() {
 // auto-refresh after "Sync now", etc).
 const activeBackfills = new Set();
 
+// Runs for as long as the user stays signed in, not just while the Accounts
+// tab happens to be open -- app-view sections are only CSS-hidden, never
+// removed, so loadAccounts() updating the (possibly offscreen) accounts
+// list every iteration is harmless and means it's already fresh whenever
+// the user does switch to Accounts. A big archive can take many chained
+// sync calls to finish backfilling; gating that on one specific tab staying
+// open the whole time was the main reason it never seemed to finish.
 async function runBackfillChain(accountId) {
   if (activeBackfills.has(accountId)) return;
   activeBackfills.add(accountId);
   try {
-    while (state.view === 'accounts') {
+    while (state.user) {
       let result;
       try {
         result = await api.syncAccount(accountId);
       } catch {
         break; // sync_status/sync_error already reflects the failure; stop chaining.
       }
-      if (state.view !== 'accounts') break;
+      if (!state.user) break;
       loadAccounts();
       if (result.backfillComplete !== false) break;
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
   } finally {
     activeBackfills.delete(accountId);
   }
+}
+
+// Kicks off (or no-ops into) a backfill chain for every account that isn't
+// caught up yet -- called on boot so a large archive starts catching up
+// immediately on login instead of waiting for the user to visit Accounts,
+// and again from loadAccounts() in case an account's backfill state changed
+// underneath it (e.g. a brand new account was just added).
+async function startBackfillWatchers() {
+  try {
+    await refreshAccounts();
+  } catch {
+    return; // not signed in yet, or a transient failure -- boot()/loadAccounts() will retry.
+  }
+  state.accounts
+    .filter((a) => !a.backfill_complete && a.sync_status !== 'error')
+    .forEach((a) => runBackfillChain(a.id));
 }
 
 async function loadAccounts() {
@@ -1684,11 +1707,11 @@ async function loadAccounts() {
         }
       })
     );
-    // Historical backfill (older mail, including anything archived) happens
-    // in small bounded batches per sync call rather than all at once -- see
+    // Historical backfill happens across many chained sync calls -- see
     // lib/imapSync.js -- so any account that isn't caught up yet gets its
-    // next batch pulled in automatically while this page is open, instead
-    // of making the user click "Sync now" over and over.
+    // next call fired automatically instead of making the user click "Sync
+    // now" over and over. Usually already running from boot; this catches
+    // an account whose backfill state just changed (e.g. one just added).
     state.accounts
       .filter((a) => !a.backfill_complete && a.sync_status !== 'error')
       .forEach((a) => runBackfillChain(a.id));
@@ -1920,6 +1943,7 @@ function showApp() {
   document.getElementById('app-root').classList.remove('hidden');
   switchView('home');
   showChangelogIfNeeded();
+  startBackfillWatchers();
 }
 
 function initAuthGate() {
@@ -1979,6 +2003,14 @@ const CHANGELOG = [
     items: [
       "Gmail accounts now sync your whole archive, not just the inbox — mail you've archived years ago becomes searchable and sortable into categories too.",
       'Since that can be thousands of messages, older mail backfills gradually in the background — the Accounts page shows "Backfilling…" while it catches up.',
+    ],
+  },
+  {
+    id: 3,
+    date: 'August 2026',
+    items: [
+      'Backfilling a large archive is a lot faster — each sync call now pulls through many chunks of older mail instead of just one, and messages save to the database in batches instead of one at a time.',
+      "Backfill now keeps running in the background the whole time you're signed in, not just while the Accounts page happens to be open.",
     ],
   },
 ];
