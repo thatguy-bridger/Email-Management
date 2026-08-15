@@ -226,13 +226,15 @@ password-based IMAP and works today.
   chunks per call instead of just one. Each call persists how far it's
   gotten (`backfill_before_uid`/`backfill_complete`), so it resumes
   correctly across calls instead of restarting, and never advances past a
-  chunk it didn't fully finish. While an account is still catching up, the
-  Accounts page shows a "Backfilling…" badge; a chain of sync calls a
-  fraction of a second apart runs automatically in the background for as
-  long as you're signed in — not only while the Accounts page happens to be
-  open — instead of making you click "Sync now" repeatedly. (Cron alone
-  would otherwise only advance backfill once a day on the Hobby plan; the
-  in-app chain is what actually gets a large archive fully synced in a
+  chunk it didn't fully finish. While an account is still catching up, Home
+  and the Accounts page both show a live "Backfilling… 1,240 / ~5,000"
+  readout (the total is an estimate off the mailbox's highest known UID, not
+  an exact count — see the `backfill_total_estimate` column comment in
+  schema.sql); a chain of sync calls runs automatically in the background
+  for as long as you're signed in — not only while the Accounts page happens
+  to be open — instead of making you click "Sync now" repeatedly. (Cron
+  alone would otherwise only advance backfill once a day on the Hobby plan;
+  the in-app chain is what actually gets a large archive fully synced in a
   reasonable time.)
 - Messages are inserted in batches (multiple rows per DB round trip, not one
   round trip per message) — with thousands of messages fetched in a single

@@ -512,6 +512,11 @@ async function loadHome() {
           <span class="color-dot" style="background:${a.color}"></span>
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(a.email)}</span>
           <span class="status-pill ${a.sync_status}">${a.sync_status}</span>
+          ${
+            !a.backfill_complete && a.sync_status !== 'error'
+              ? `<span class="status-pill backfilling" title="Pulling in older mail (including anything archived) in the background">${backfillProgressLabel(a)}</span>`
+              : ''
+          }
         </div>`
             )
             .join('');
@@ -1607,6 +1612,17 @@ async function refreshAccounts() {
   return accounts;
 }
 
+// "Backfilling… 1,240 / ~5,000" -- so it's visibly climbing on every
+// refresh instead of just sitting on a static label with no sign of
+// whether anything is actually happening. backfill_total_estimate is only
+// known once a mailbox has been synced at least once (null before that,
+// e.g. very first sync in flight), so the "/ ~total" part is left off then.
+function backfillProgressLabel(a) {
+  const synced = (a.messages_synced || 0).toLocaleString();
+  const total = a.backfill_total_estimate ? `/ ~${a.backfill_total_estimate.toLocaleString()}` : '';
+  return `Backfilling&hellip; ${synced} ${total}`.trim();
+}
+
 // Account ids with a backfill chain already running -- guards against
 // piling up duplicate chains every time loadAccounts() re-renders (it can
 // run repeatedly while the accounts view stays open: manual refresh, the
@@ -1633,6 +1649,10 @@ async function runBackfillChain(accountId) {
       }
       if (!state.user) break;
       loadAccounts();
+      // Home shows the same live progress in its account status list --
+      // refreshed here too (not just Accounts) since Home is the default
+      // landing view and where most people are actually watching this.
+      if (state.view === 'home') loadHome();
       if (result.backfillComplete !== false) break;
       await new Promise((resolve) => setTimeout(resolve, 800));
     }
@@ -1681,7 +1701,7 @@ async function loadAccounts() {
         <span class="status-pill ${a.sync_status}">${a.sync_status}</span>
         ${
           !a.backfill_complete && a.sync_status !== 'error'
-            ? '<span class="status-pill backfilling" title="Pulling in older mail (including anything archived) in the background, a batch at a time">Backfilling&hellip;</span>'
+            ? `<span class="status-pill backfilling" title="Pulling in older mail (including anything archived) in the background">${backfillProgressLabel(a)}</span>`
             : ''
         }
         <button class="icon-btn" data-edit="${a.id}" title="Rename / recolor">&#9998;</button>
@@ -2011,6 +2031,13 @@ const CHANGELOG = [
     items: [
       'Backfilling a large archive is a lot faster — each sync call now pulls through many chunks of older mail instead of just one, and messages save to the database in batches instead of one at a time.',
       "Backfill now keeps running in the background the whole time you're signed in, not just while the Accounts page happens to be open.",
+    ],
+  },
+  {
+    id: 4,
+    date: 'August 2026',
+    items: [
+      'Home and Accounts now show an actual "Backfilling… 1,240 / ~5,000" count for accounts still catching up, instead of a static label with no sense of whether anything is happening.',
     ],
   },
 ];

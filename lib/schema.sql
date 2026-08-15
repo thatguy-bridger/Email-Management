@@ -49,6 +49,13 @@ CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS sync_mailbox TEXT;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS backfill_before_uid INTEGER;
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS backfill_complete BOOLEAN NOT NULL DEFAULT false;
+-- The highest UID the sync mailbox has ever assigned, as of the most recent
+-- sync -- a rough "how much mail exists in total" estimate (some UIDs never
+-- got a message, or got a message that was later deleted, so this can
+-- slightly overcount actual synced messages, which is fine for a progress
+-- readout but shouldn't be treated as exact). Refreshed on every sync, so it
+-- grows as new mail arrives even while backfill is still catching up.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS backfill_total_estimate INTEGER;
 
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,

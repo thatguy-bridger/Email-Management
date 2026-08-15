@@ -32,7 +32,14 @@ export default withAuth(async (req, res) => {
       [userId]
     ),
     query(
-      `SELECT id, email, display_name, color, last_synced_at, sync_status, sync_error FROM accounts WHERE user_id = $1 ORDER BY created_at ASC`,
+      `SELECT a.id, a.email, a.display_name, a.color, a.last_synced_at, a.sync_status, a.sync_error,
+              a.backfill_complete, a.backfill_total_estimate,
+              COALESCE(mc.count, 0)::int AS messages_synced
+       FROM accounts a
+       LEFT JOIN (SELECT account_id, COUNT(*) AS count FROM messages GROUP BY account_id) mc
+         ON mc.account_id = a.id
+       WHERE a.user_id = $1
+       ORDER BY a.created_at ASC`,
       [userId]
     ),
     query(
